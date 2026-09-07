@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+@theme {
+  --font-headline: "Outfit", "Hind Siliguri", sans-serif;
+  --font-display: "Outfit", "Hind Siliguri", sans-serif;
+  --font-body: "Inter", "Hind Siliguri", sans-serif;
+  --font-label: "Outfit", "Hind Siliguri", sans-serif;
+
+  --color-surface-container-low: #eff4ff;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-fixed-variant: #005236;
+  --color-surface-container-highest: #d3e4fe;
+  --color-secondary-fixed-dim: #ffb95f;
+  --color-outline: #6d7a77;
+  --color-on-error: #ffffff;
+  --color-on-secondary-fixed: #2a1700;
+  --color-surface-container-lowest: #ffffff;
+  --color-primary-fixed: #89f5e7;
+  --color-on-tertiary-container: #f5fff6;
+  --color-on-tertiary-fixed: #002113;
+  --color-error-container: #ffdad6;
+  --color-on-secondary-fixed-variant: #653e00;
+  --color-primary-container: #008378;
+  --color-on-secondary-container: #684000;
+  --color-surface-container: #e5eeff;
+  --color-on-surface: #0b1c30;
+  --color-secondary-container: #fea619;
+  --color-primary-fixed-dim: #6bd8cb;
+  --color-surface-variant: #d3e4fe;
+  --color-on-surface-variant: #3d4947;
+  --color-on-primary-fixed-variant: #005049;
+  --color-error: #ba1a1a;
+  --color-on-primary-fixed: #00201d;
+  --color-background: #f8f9ff;
+  --color-tertiary-fixed-dim: #4edea3;
+  --color-on-primary-container: #f4fffc;
+  --color-surface-tint: #006a61;
+  --color-surface-container-high: #dce9ff;
+  --color-secondary: #855300;
+  --color-tertiary-fixed: #6ffbbe;
+  --color-on-background: #0b1c30;
+  --color-surface: #f8f9ff;
+  --color-surface-bright: #f8f9ff;
+  --color-inverse-on-surface: #eaf1ff;
+  --color-outline-variant: #bcc9c6;
+  --color-on-secondary: #ffffff;
+  --color-primary: #00685f;
+  --color-inverse-primary: #6bd8cb;
+  --color-tertiary: #006947;
+  --color-secondary-fixed: #ffddb8;
+  --color-inverse-surface: #213145;
+  --color-tertiary-container: #00855b;
+  --color-surface-dim: #cbdbf5;
+  --color-on-primary: #ffffff;
+  --color-on-error-container: #93000a;
+}
+
+@layer base {
+  :root {
+    --bg-main: #f8f9ff;
+    --bg-card: #ffffff;
+    --text-main: #0b1c30;
+    --text-muted: #3d4947;
+    --border-color: #e5eeff;
+    --accent-teal: #00685f;
+  }
+
+  .dark {
+    --bg-main: #0b1c30;
+    --bg-card: #172a40;
+    --text-main: #f8f9ff;
+    --text-muted: #bcc9c6;
+    --border-color: #213145;
+    --accent-teal: #6bd8cb;
+  }
+
+  html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    overscroll-behavior: none;
+    font-family: 'Inter', 'Hind Siliguri', sans-serif;
+  }
+
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+
+  h1, h2, h3, h4 {
+    font-family: 'Outfit', 'Hind Siliguri', sans-serif;
+  }
+}
+
+.font-headline {
+  font-family: 'Outfit', 'Hind Siliguri', sans-serif;
+}
+
+.font-body {
+  font-family: 'Inter', 'Hind Siliguri', sans-serif;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Option Cards for Quizzes */
+.option-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  background-color: var(--bg-card);
+  border: 1.5px solid var(--border-color);
+  cursor: pointer;
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.option-card:hover {
+  border-color: var(--accent-teal);
+}
+
+.option-card.selected {
+  border-color: var(--accent-teal) !important;
+  background-color: rgba(0, 104, 95, 0.08) !important;
+}
+
+/* Timer Urgency Pulse */
+@keyframes pulse-danger {
+  0%, 100% {
+    border-color: #ba1a1a;
+    box-shadow: 0 0 12px rgba(186, 26, 26, 0.4);
+  }
+  50% {
+    border-color: #ffdad6;
+    box-shadow: 0 0 4px rgba(186, 26, 26, 0.2);
+  }
+}
+
+.timer-warning {
+  animation: pulse-danger 1s infinite;
+}
