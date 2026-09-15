@@ -1,7 +1,12 @@
 import React from 'react';
 import { useActiveProfile } from '../context/ProfileContext';
 
-export default function Navigation({ currentTab, onSwitchTab }) {
+interface NavigationProps {
+  currentTab: string;
+  onSwitchTab: (tabId: string) => void;
+}
+
+export default function Navigation({ currentTab, onSwitchTab }: NavigationProps) {
   const { activeProfile, setIsSwitcherOpen } = useActiveProfile();
 
   const navItems = [

@@ -1,9 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import StitchSelect from './StitchSelect';
+import { Quiz } from '../types';
+import { db } from '../db/db';
+import { useActiveProfile } from '../context/ProfileContext';
 
-export default function QuizWizard({ onStartExam, showToast }) {
+interface QuizWizardProps {
+  onStartExam: (data: { quiz: Quiz; config: any }) => void;
+  showToast: (type: string, message: string) => void;
+}
+
+export default function QuizWizard({ onStartExam, showToast }: QuizWizardProps) {
+  const { activeProfileId } = useActiveProfile();
+  const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState(1);
-  const fileInputRef = useRef(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Step 1: Topic Data
   const [grade, setGrade] = useState('নবম-দশম (SSC)');
@@ -22,7 +32,7 @@ export default function QuizWizard({ onStartExam, showToast }) {
   // Step 3: Prompt & JSON
   const [promptText, setPromptText] = useState('');
   const [jsonText, setJsonText] = useState('');
-  const [validation, setValidation] = useState({ isValid: false, message: '', parsed: null });
+  const [validation, setValidation] = useState<{ isValid: boolean; message: string; parsed: Quiz | null }>({ isValid: false, message: '', parsed: null });
 
   // Generate AI Prompt
   useEffect(() => {
@@ -69,26 +79,26 @@ STRICT JSON STRUCTURE TO FOLLOW:
 
     try {
       let sanitizedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      
+
       // Temporarily mask double backslashes so we don't double-escape them
       sanitizedText = sanitizedText.replace(/\\\\/g, '@@DOUBLE_SLASH@@');
-      
+
       // Auto-escape LaTeX macros that start with valid JSON escape characters
       sanitizedText = sanitizedText.replace(/\\(text|tan|theta|tau|times|to|top|triangle|tilde|nu|nabla|neq|ni|notin|rho|right|rangle|rightarrow|frac|forall|flat|beta|bot|bullet|bar|bf)/g, '\\\\$1');
-      
+
       // Auto-escape unescaped backslashes for other LaTeX
       sanitizedText = sanitizedText.replace(/\\([^"\\/bfnrtu])/g, '\\\\$1');
-      
+
       // Restore the double backslashes
       sanitizedText = sanitizedText.replace(/@@DOUBLE_SLASH@@/g, '\\\\');
-      
+
       const parsed = JSON.parse(sanitizedText);
 
       if (!parsed.quiz_title || !Array.isArray(parsed.questions) || parsed.questions.length === 0) {
         throw new Error("Invalid structure: missing 'quiz_title' or 'questions' array.");
       }
 
-      parsed.questions.forEach((q, idx) => {
+      parsed.questions.forEach((q: any, idx: number) => {
         if (!q.question || !Array.isArray(q.options) || q.options.length < 2) {
           throw new Error(`Question ${idx + 1}: Invalid question or options array.`);
         }
@@ -98,19 +108,19 @@ STRICT JSON STRUCTURE TO FOLLOW:
       });
 
       setValidation({ isValid: true, message: `JSON Valid (${parsed.questions.length} Questions)`, parsed });
-    } catch (err) {
+    } catch (err: any) {
       setValidation({ isValid: false, message: err.message, parsed: null });
     }
   }, [jsonText]);
 
   const handleFixJson = () => {
     let fixed = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    
+
     fixed = fixed.replace(/\\\\/g, '@@DOUBLE_SLASH@@');
     fixed = fixed.replace(/\\(text|tan|theta|tau|times|to|top|triangle|tilde|nu|nabla|neq|ni|notin|rho|right|rangle|rightarrow|frac|forall|flat|beta|bot|bullet|bar|bf)/g, '\\\\$1');
     fixed = fixed.replace(/\\([^"\\/bfnrtu])/g, '\\\\$1');
     fixed = fixed.replace(/@@DOUBLE_SLASH@@/g, '\\\\');
-    
+
     try {
       JSON.parse(fixed);
       setJsonText(fixed);
@@ -128,16 +138,16 @@ STRICT JSON STRUCTURE TO FOLLOW:
     });
   };
 
-  const handleFileUpload = (file) => {
+  const handleFileUpload = (file: File | undefined) => {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (e) => setJsonText(e.target.result);
+    reader.onload = (e) => setJsonText(e.target?.result as string);
     reader.readAsText(file);
   };
 
   const handleStartExam = () => {
     if (!validation.isValid || !validation.parsed) return;
-    
+
     onStartExam({
       quiz: validation.parsed,
       config: {
@@ -146,6 +156,38 @@ STRICT JSON STRUCTURE TO FOLLOW:
         negativeMarking: parseFloat(negative) || 0
       }
     });
+  };
+
+  const handleSaveQuiz = async () => {
+    if (!validation.isValid || !validation.parsed || !activeProfileId) return;
+    setIsSaving(true);
+    try {
+      // Check if a quiz with same title already saved for this profile
+      const existing = await db.quizzes
+        .where('profileId').equals(activeProfileId)
+        .filter(q => q.quiz_title === validation.parsed!.quiz_title)
+        .first();
+
+      if (existing) {
+        showToast('warning', `"${validation.parsed.quiz_title}" is already saved in your library!`);
+        return;
+      }
+
+      await db.quizzes.add({
+        profileId: activeProfileId,
+        quiz_title: validation.parsed.quiz_title,
+        quiz_data: validation.parsed,
+        savedAt: new Date().toISOString(),
+        questionCount: validation.parsed.questions.length,
+      });
+      showToast('success', `Quiz saved to your library! ✓`);
+      // Reset step 3 so they can create another
+      setJsonText('');
+    } catch (err: any) {
+      showToast('error', 'Failed to save quiz. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -176,7 +218,7 @@ STRICT JSON STRUCTURE TO FOLLOW:
         <div className="space-y-4">
           <div>
             <h2 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
-              Topic & Details <span className="text-lg font-medium text-outline">/ বিষয় নির্বাচন</span>
+              Topic & Details
             </h2>
             <p className="text-sm text-on-surface-variant mt-1 font-body">
               Specify class, subject, and topic to generate questions
@@ -188,13 +230,13 @@ STRICT JSON STRUCTURE TO FOLLOW:
               <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
                 Class / Level
               </label>
-              <StitchSelect 
-                value={grade} 
-                onChange={(e) => setGrade(e.target.value)} 
+              <StitchSelect
+                value={grade}
+                onChange={(e) => setGrade(e.target.value)}
                 options={[
-                  'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 
-                  'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 
-                  'Class 11', 'Class 12', 
+                  'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5',
+                  'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10',
+                  'Class 11', 'Class 12',
                   'Admission Test', 'Job / BCS', 'General Learning'
                 ]}
                 className="w-full h-11 px-4 text-sm"
@@ -206,12 +248,12 @@ STRICT JSON STRUCTURE TO FOLLOW:
                 <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
                   Subject
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="Physics" 
-                  value={subject} 
-                  onChange={(e) => setSubject(e.target.value)} 
-                  className="w-full h-11 px-4 rounded-xl bg-surface-container-lowest border border-outline-variant text-sm font-body text-on-surface focus:outline-none focus:border-primary" 
+                <input
+                  type="text"
+                  placeholder="Physics"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  className="w-full h-11 px-4 rounded-xl bg-surface-container-lowest border border-outline-variant text-sm font-body text-on-surface focus:outline-none focus:border-primary"
                 />
               </div>
 
@@ -219,12 +261,12 @@ STRICT JSON STRUCTURE TO FOLLOW:
                 <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
                   Chapter
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="Chapter 4" 
-                  value={chapter} 
-                  onChange={(e) => setChapter(e.target.value)} 
-                  className="w-full h-11 px-4 rounded-xl bg-surface-container-lowest border border-outline-variant text-sm font-body text-on-surface focus:outline-none focus:border-primary" 
+                <input
+                  type="text"
+                  placeholder="Chapter 4"
+                  value={chapter}
+                  onChange={(e) => setChapter(e.target.value)}
+                  className="w-full h-11 px-4 rounded-xl bg-surface-container-lowest border border-outline-variant text-sm font-body text-on-surface focus:outline-none focus:border-primary"
                 />
               </div>
             </div>
@@ -233,11 +275,11 @@ STRICT JSON STRUCTURE TO FOLLOW:
               <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
                 Specific Topics
               </label>
-              <textarea 
-                placeholder="e.g. Modern Physics, Atomic Models" 
-                value={topic} 
-                onChange={(e) => setTopic(e.target.value)} 
-                rows={2} 
+              <textarea
+                placeholder="e.g. Modern Physics, Atomic Models"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                rows={2}
                 className="w-full p-3 rounded-xl bg-surface-container-lowest border border-outline-variant text-sm font-body text-on-surface focus:outline-none focus:border-primary resize-none"
               ></textarea>
             </div>
@@ -250,7 +292,7 @@ STRICT JSON STRUCTURE TO FOLLOW:
         <div className="space-y-4">
           <div>
             <h2 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
-              Select Difficulty <span className="text-lg font-medium text-outline">/ কাঠিন্যের মাত্রা</span>
+              Select Difficulty
             </h2>
             <p className="text-sm text-on-surface-variant mt-1 font-body">
               Choose the challenge level for this quiz
@@ -260,18 +302,16 @@ STRICT JSON STRUCTURE TO FOLLOW:
           {/* Difficulty Interactive Cards */}
           <div className="flex flex-col gap-3">
             {/* Beginner */}
-            <div 
+            <div
               onClick={() => setDifficulty('beginner')}
-              className={`group relative flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest cursor-pointer transition-all active:scale-[0.99] ${
-                difficulty === 'beginner' 
-                  ? 'border-2 border-primary shadow-sm' 
+              className={`group relative flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest cursor-pointer transition-all active:scale-[0.99] ${difficulty === 'beginner'
+                  ? 'border-2 border-primary shadow-sm'
                   : 'border border-outline-variant/60 hover:border-outline'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3.5 pr-2">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                  difficulty === 'beginner' ? 'bg-primary/10 text-primary' : 'bg-surface-container text-outline'
-                }`}>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${difficulty === 'beginner' ? 'bg-primary/10 text-primary' : 'bg-surface-container text-outline'
+                  }`}>
                   <span className="material-symbols-outlined text-[20px]">eco</span>
                 </div>
                 <div>
@@ -286,26 +326,23 @@ STRICT JSON STRUCTURE TO FOLLOW:
                   </p>
                 </div>
               </div>
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                difficulty === 'beginner' ? 'bg-primary text-on-primary shadow-xs' : 'border-2 border-outline-variant'
-              }`}>
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${difficulty === 'beginner' ? 'bg-primary text-on-primary shadow-xs' : 'border-2 border-outline-variant'
+                }`}>
                 {difficulty === 'beginner' && <span className="material-symbols-outlined text-[14px] font-bold">check</span>}
               </div>
             </div>
 
             {/* Intermediate */}
-            <div 
+            <div
               onClick={() => setDifficulty('intermediate')}
-              className={`group relative flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest cursor-pointer transition-all active:scale-[0.99] ${
-                difficulty === 'intermediate' 
-                  ? 'border-2 border-primary shadow-sm' 
+              className={`group relative flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest cursor-pointer transition-all active:scale-[0.99] ${difficulty === 'intermediate'
+                  ? 'border-2 border-primary shadow-sm'
                   : 'border border-outline-variant/60 hover:border-outline'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3.5 pr-2">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                  difficulty === 'intermediate' ? 'bg-primary/10 text-primary' : 'bg-surface-container text-outline'
-                }`}>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${difficulty === 'intermediate' ? 'bg-primary/10 text-primary' : 'bg-surface-container text-outline'
+                  }`}>
                   <span className="material-symbols-outlined text-[20px]">trending_up</span>
                 </div>
                 <div>
@@ -320,26 +357,23 @@ STRICT JSON STRUCTURE TO FOLLOW:
                   </p>
                 </div>
               </div>
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                difficulty === 'intermediate' ? 'bg-primary text-on-primary shadow-xs' : 'border-2 border-outline-variant'
-              }`}>
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${difficulty === 'intermediate' ? 'bg-primary text-on-primary shadow-xs' : 'border-2 border-outline-variant'
+                }`}>
                 {difficulty === 'intermediate' && <span className="material-symbols-outlined text-[14px] font-bold">check</span>}
               </div>
             </div>
 
             {/* Advanced */}
-            <div 
+            <div
               onClick={() => setDifficulty('advanced')}
-              className={`group relative flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest cursor-pointer transition-all active:scale-[0.99] ${
-                difficulty === 'advanced' 
-                  ? 'border-2 border-primary shadow-sm' 
+              className={`group relative flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest cursor-pointer transition-all active:scale-[0.99] ${difficulty === 'advanced'
+                  ? 'border-2 border-primary shadow-sm'
                   : 'border border-outline-variant/60 hover:border-outline'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3.5 pr-2">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                  difficulty === 'advanced' ? 'bg-primary/10 text-primary' : 'bg-surface-container text-outline'
-                }`}>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${difficulty === 'advanced' ? 'bg-primary/10 text-primary' : 'bg-surface-container text-outline'
+                  }`}>
                   <span className="material-symbols-outlined text-[20px]">bolt</span>
                 </div>
                 <div>
@@ -354,9 +388,8 @@ STRICT JSON STRUCTURE TO FOLLOW:
                   </p>
                 </div>
               </div>
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                difficulty === 'advanced' ? 'bg-primary text-on-primary shadow-xs' : 'border-2 border-outline-variant'
-              }`}>
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${difficulty === 'advanced' ? 'bg-primary text-on-primary shadow-xs' : 'border-2 border-outline-variant'
+                }`}>
                 {difficulty === 'advanced' && <span className="material-symbols-outlined text-[14px] font-bold">check</span>}
               </div>
             </div>
@@ -368,9 +401,9 @@ STRICT JSON STRUCTURE TO FOLLOW:
               <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
                 Questions Count
               </label>
-              <StitchSelect 
-                value={count} 
-                onChange={(e) => setCount(e.target.value)} 
+              <StitchSelect
+                value={count}
+                onChange={(e) => setCount(e.target.value)}
                 options={[
                   { value: '5', label: '5 Questions' },
                   { value: '10', label: '10 Questions' },
@@ -385,9 +418,9 @@ STRICT JSON STRUCTURE TO FOLLOW:
               <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
                 Duration (Mins)
               </label>
-              <StitchSelect 
-                value={duration} 
-                onChange={(e) => setDuration(e.target.value)} 
+              <StitchSelect
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
                 options={[
                   { value: '5', label: '5 Minutes' },
                   { value: '10', label: '10 Minutes' },
@@ -412,11 +445,11 @@ STRICT JSON STRUCTURE TO FOLLOW:
                 <p className="text-[11px] text-outline mt-0.5">Focus revision on your previous weak points</p>
               </div>
             </div>
-            <input 
-              type="checkbox" 
-              checked={includeMissed} 
-              onChange={(e) => setIncludeMissed(e.target.checked)} 
-              className="accent-primary w-4 h-4 cursor-pointer" 
+            <input
+              type="checkbox"
+              checked={includeMissed}
+              onChange={(e) => setIncludeMissed(e.target.checked)}
+              className="accent-primary w-4 h-4 cursor-pointer"
             />
           </div>
         </div>
@@ -427,7 +460,7 @@ STRICT JSON STRUCTURE TO FOLLOW:
         <div className="space-y-4">
           <div>
             <h2 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
-              Generate & Import <span className="text-lg font-medium text-outline">/ লোড বা প্রম্পট</span>
+              Generate & Import
             </h2>
             <p className="text-sm text-on-surface-variant mt-1 font-body">
               Copy prompt for AI or paste your generated quiz JSON
@@ -435,7 +468,7 @@ STRICT JSON STRUCTURE TO FOLLOW:
           </div>
 
           <div className="flex gap-2">
-            <button 
+            <button
               onClick={handleCopyPrompt}
               className="flex-1 h-11 rounded-xl bg-surface-container-low border border-surface-container-high text-primary font-headline text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container transition-all cursor-pointer"
             >
@@ -443,8 +476,8 @@ STRICT JSON STRUCTURE TO FOLLOW:
               <span>Copy AI Prompt</span>
             </button>
 
-            <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={(e) => handleFileUpload(e.target.files[0])} />
-            <button 
+            <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={(e) => handleFileUpload(e.target.files?.[0])} />
+            <button
               onClick={() => fileInputRef.current?.click()}
               className="flex-1 h-11 rounded-xl bg-surface-container-lowest border border-outline-variant text-on-surface font-headline text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container transition-all cursor-pointer"
             >
@@ -469,9 +502,8 @@ STRICT JSON STRUCTURE TO FOLLOW:
             onChange={(e) => setJsonText(e.target.value)}
             placeholder="Paste quiz JSON string here..."
             rows={6}
-            className={`w-full p-3 font-mono text-xs rounded-xl bg-surface-container-lowest border-2 focus:outline-none transition-all resize-none ${
-              validation.isValid ? 'border-tertiary focus:border-tertiary' : jsonText ? 'border-error focus:border-error' : 'border-outline-variant focus:border-primary'
-            }`}
+            className={`w-full p-3 font-mono text-xs rounded-xl bg-surface-container-lowest border-2 focus:outline-none transition-all resize-none ${validation.isValid ? 'border-tertiary focus:border-tertiary' : jsonText ? 'border-error focus:border-error' : 'border-outline-variant focus:border-primary'
+              }`}
           />
         </div>
       )}
@@ -479,7 +511,7 @@ STRICT JSON STRUCTURE TO FOLLOW:
       {/* Fixed Bottom Wizard Actions */}
       <footer className="fixed bottom-0 left-0 w-full z-40 pb-safe bg-surface/95 backdrop-blur-lg border-t border-surface-container-high/70">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center gap-3">
-          <button 
+          <button
             disabled={step === 1}
             onClick={() => setStep(prev => prev - 1)}
             className="h-11 px-5 rounded-xl border border-surface-container-high bg-surface-container-lowest text-on-surface font-label text-sm font-medium flex items-center justify-center gap-1.5 hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 cursor-pointer"
@@ -490,7 +522,7 @@ STRICT JSON STRUCTURE TO FOLLOW:
           </button>
 
           {step < 3 ? (
-            <button 
+            <button
               onClick={() => setStep(prev => prev + 1)}
               className="flex-1 h-11 rounded-xl bg-primary text-on-primary font-label text-sm font-semibold flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary-container active:scale-[0.98] transition-all cursor-pointer"
               type="button"
@@ -499,15 +531,26 @@ STRICT JSON STRUCTURE TO FOLLOW:
               <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
             </button>
           ) : (
-            <button 
-              onClick={handleStartExam}
-              disabled={!validation.isValid}
-              className="flex-1 h-11 rounded-xl bg-primary text-on-primary font-label text-sm font-semibold flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary-container disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all cursor-pointer"
-              type="button"
-            >
-              <span>Start Quiz Exam</span>
-              <span className="material-symbols-outlined text-[18px]">play_arrow</span>
-            </button>
+            <div className="flex-1 flex items-center gap-2">
+              <button
+                onClick={handleSaveQuiz}
+                disabled={!validation.isValid || isSaving}
+                className="flex-1 h-11 rounded-xl bg-surface-container-low border border-surface-container-high text-on-surface font-label text-sm font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all cursor-pointer"
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px] text-primary">{isSaving ? 'hourglass_empty' : 'bookmark_add'}</span>
+                <span>{isSaving ? 'Saving...' : 'Save Quiz'}</span>
+              </button>
+              <button
+                onClick={handleStartExam}
+                disabled={!validation.isValid}
+                className="flex-1 h-11 rounded-xl bg-primary text-on-primary font-label text-sm font-semibold flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all cursor-pointer"
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">play_arrow</span>
+                <span>Start Exam</span>
+              </button>
+            </div>
           )}
         </div>
       </footer>

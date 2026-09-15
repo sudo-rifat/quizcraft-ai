@@ -1,8 +1,18 @@
 import React, { useRef } from 'react';
 import { Archive, Trash2, RotateCcw, PieChart, Calendar, Star, Download, Upload, TrendingUp } from 'lucide-react';
 
-export default function HistoryPortal({ history, onRetakeItem, onViewResult, onDeleteItem, onClearAll, onImportHistory, showToast }) {
-  const importInputRef = useRef(null);
+interface HistoryPortalProps {
+  history: any[];
+  onRetakeItem: (id: string) => void;
+  onViewResult: (id: string) => void;
+  onDeleteItem: (id: string) => void;
+  onClearAll: () => void;
+  onImportHistory: (data: any[]) => void;
+  showToast: (type: string, message: string) => void;
+}
+
+export default function HistoryPortal({ history, onRetakeItem, onViewResult, onDeleteItem, onClearAll, onImportHistory, showToast }: HistoryPortalProps) {
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const handleExportBackup = () => {
     if (history.length === 0) {
@@ -19,12 +29,13 @@ export default function HistoryPortal({ history, onRetakeItem, onViewResult, onD
     showToast('success', 'হিস্ট্রি ব্যাকআপ ডাউনলোড করা হয়েছে!');
   };
 
-  const handleImportFile = (file) => {
+  const handleImportFile = (file: File | undefined) => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const parsed = JSON.parse(e.target.result);
+        const result = e.target?.result as string;
+        const parsed = JSON.parse(result);
         if (Array.isArray(parsed)) {
           onImportHistory(parsed);
         } else {
@@ -63,7 +74,7 @@ export default function HistoryPortal({ history, onRetakeItem, onViewResult, onD
             type="file"
             accept=".json"
             className="hidden"
-            onChange={(e) => handleImportFile(e.target.files[0])}
+            onChange={(e) => handleImportFile(e.target.files?.[0])}
           />
           <button
             onClick={() => importInputRef.current?.click()}
@@ -102,10 +113,10 @@ export default function HistoryPortal({ history, onRetakeItem, onViewResult, onD
           <div className="h-32 flex items-end justify-between gap-1.5 pt-4 border-b border-slate-200">
             {recentHistory.map((rec, idx) => (
               <div key={idx} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-[9px] font-bold text-teal-900">{rec.stats.accuracyPercent}%</span>
+                <span className="text-[9px] font-bold text-teal-900">{rec.stats?.accuracyPercent || 0}%</span>
                 <div
                   className="w-full max-w-[20px] bg-teal-700 rounded-t-md transition-all duration-300"
-                  style={{ height: `${Math.max(10, rec.stats.accuracyPercent)}%` }}
+                  style={{ height: `${Math.max(10, rec.stats?.accuracyPercent || 0)}%` }}
                 />
                 <span className="text-[9px] text-slate-500 font-bold">#{idx + 1}</span>
               </div>
@@ -133,7 +144,7 @@ export default function HistoryPortal({ history, onRetakeItem, onViewResult, onD
                       <Calendar className="w-3 h-3 text-slate-400" /> {dateStr}
                     </span>
                     <span className="font-bold text-teal-900 bg-teal-100 px-2 py-0.5 rounded-full">
-                      {rec.stats.accuracyPercent}% Score
+                      {rec.stats?.accuracyPercent || 0}% Score
                     </span>
                   </div>
 
@@ -142,9 +153,9 @@ export default function HistoryPortal({ history, onRetakeItem, onViewResult, onD
                   </h3>
 
                   <div className="flex items-center gap-3 text-[11px] font-bold text-slate-600">
-                    <span>{rec.quiz_data.questions.length} প্রশ্ন</span>
+                    <span>{rec.quiz_data?.questions?.length || 0} প্রশ্ন</span>
                     <span className="flex items-center gap-1 text-amber-600">
-                      <Star className="w-3 h-3" /> {rec.stats.obtainedMarks} / {rec.stats.totalMarks}
+                      <Star className="w-3 h-3" /> {rec.stats?.obtainedMarks || 0} / {rec.stats?.totalMarks || 0}
                     </span>
                   </div>
                 </div>

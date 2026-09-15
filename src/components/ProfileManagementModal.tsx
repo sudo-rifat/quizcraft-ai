@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useActiveProfile } from '../context/ProfileContext';
 import StitchSelect from './StitchSelect';
+import { Profile } from '../types';
 
 const PRESET_COLORS = ['#006a60', '#00658f', '#6750a4', '#984061', '#705d00', '#825500', '#2b6b37', '#9c4300'];
 const GRADE_OPTIONS = [
@@ -10,11 +11,17 @@ const GRADE_OPTIONS = [
   'Admission Test', 'Job / BCS', 'General Learning'
 ];
 
-export default function ProfileManagementModal({ isOpen, onClose, showToast }) {
+interface ProfileManagementModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  showToast?: (type: string, message: string) => void;
+}
+
+export default function ProfileManagementModal({ isOpen, onClose, showToast }: ProfileManagementModalProps) {
   const { profiles, activeProfile, updateProfile, deleteProfile, setIsProfileSelectorOpen } = useActiveProfile();
 
-  const [editingProfile, setEditingProfile] = useState(null);
-  const [deleteConfirmProfile, setDeleteConfirmProfile] = useState(null);
+  const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+  const [deleteConfirmProfile, setDeleteConfirmProfile] = useState<Profile | null>(null);
 
   // Edit Form Fields
   const [name, setName] = useState('');
@@ -24,7 +31,7 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }) {
 
   if (!isOpen) return null;
 
-  const handleStartEdit = (profile) => {
+  const handleStartEdit = (profile: Profile) => {
     setEditingProfile(profile);
     setName(profile.name);
     setGrade(profile.grade || 'Class 10');
@@ -32,7 +39,7 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }) {
     setPin('');
   };
 
-  const handleSaveEdit = async (e) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProfile) return;
 
@@ -44,23 +51,23 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }) {
           ...editingProfile.avatar,
           color,
           value: name.trim().charAt(0).toUpperCase()
-        },
+        } as any,
         pin: pin.trim() ? pin.trim() : (pin === '' && editingProfile.pinEnabled ? '' : undefined)
       });
 
       showToast?.('success', 'Profile updated successfully.');
       setEditingProfile(null);
-    } catch (err) {
+    } catch (err: any) {
       showToast?.('error', err.message);
     }
   };
 
-  const handleDelete = async (profile) => {
+  const handleDelete = async (profile: Profile) => {
     try {
       await deleteProfile(profile.id);
       showToast?.('info', `Profile "${profile.name}" and all associated data have been permanently deleted.`);
       setDeleteConfirmProfile(null);
-    } catch (err) {
+    } catch (err: any) {
       showToast?.('error', err.message);
     }
   };

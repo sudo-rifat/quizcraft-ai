@@ -1,6 +1,6 @@
 import { db } from '../db/db';
 
-export async function hashPin(pin) {
+export async function hashPin(pin: string): Promise<string | null> {
   if (!pin) return null;
   const msgBuffer = new TextEncoder().encode(pin);
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -12,12 +12,12 @@ export async function getAllProfiles() {
   return await db.profiles.toArray();
 }
 
-export async function getProfileById(id) {
+export async function getProfileById(id: string) {
   if (!id) return null;
   return await db.profiles.get(id);
 }
 
-export async function createProfile({ name, grade, avatar, pin = null }) {
+export async function createProfile({ name, grade, avatar, pin = null }: any) {
   if (!name || !name.trim()) {
     throw new Error('Profile name is required.');
   }
@@ -43,11 +43,11 @@ export async function createProfile({ name, grade, avatar, pin = null }) {
     pinHash
   };
 
-  await db.profiles.add(profile);
+  await db.profiles.add(profile as any);
   return profile;
 }
 
-export async function updateProfile(id, updates) {
+export async function updateProfile(id: string, updates: any) {
   const existing = await db.profiles.get(id);
   if (!existing) {
     throw new Error('Profile not found.');
@@ -76,7 +76,7 @@ export async function updateProfile(id, updates) {
   return await db.profiles.get(id);
 }
 
-export async function deleteProfile(id) {
+export async function deleteProfile(id: string) {
   const profile = await db.profiles.get(id);
   if (!profile) return;
 

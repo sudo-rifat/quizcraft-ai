@@ -3,16 +3,20 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, defaultSettings } from '../db/db';
 import { useActiveProfile } from '../context/ProfileContext';
 
-export default function Settings({ showToast }) {
+interface SettingsProps {
+  showToast: (type: string, message: string) => void;
+}
+
+export default function Settings({ showToast }: SettingsProps) {
   const prefs = useLiveQuery(() => db.settings.get('user_prefs'), []) || defaultSettings;
   const { activeProfile, activeProfileId, updateProfile, setIsManagementOpen, setIsProfileSelectorOpen } = useActiveProfile();
 
-  const updatePref = async (key, value) => {
-    await db.settings.put({ ...prefs, [key]: value });
+  const updatePref = async (key: string, value: any) => {
+    await db.settings.put({ ...prefs, [key]: value } as any);
   };
 
-  const handleNameChange = async (newName) => {
-    if (!activeProfileId || !newName.trim()) return;
+  const handleNameChange = async (newName: string) => {
+    if (!activeProfileId || !newName.trim() || !activeProfile) return;
     await updateProfile(activeProfileId, {
       name: newName.trim(),
       avatar: {

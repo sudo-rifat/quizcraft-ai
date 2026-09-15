@@ -1,4 +1,6 @@
-export const SAMPLE_QUIZZES = {
+import { Quiz } from '../types';
+
+export const SAMPLE_QUIZZES: Record<string, Quiz> = {
   physics: {
     quiz_title: "পদার্থবিজ্ঞান - গতি ও বল (SSC)",
     questions: [

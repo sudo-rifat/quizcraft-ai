@@ -1,12 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function StitchSelect({ value, onChange, options, className = '' }) {
+type OptionType = string | number | { label: string; value: string | number };
+
+interface StitchSelectProps {
+  value: string | number;
+  onChange: (event: { target: { value: string } }) => void;
+  options: OptionType[];
+  className?: string;
+}
+
+export default function StitchSelect({ value, onChange, options, className = '' }: StitchSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
@@ -16,7 +25,7 @@ export default function StitchSelect({ value, onChange, options, className = '' 
     };
   }, []);
 
-  const handleSelect = (optionValue) => {
+  const handleSelect = (optionValue: string | number) => {
     // Mimic the native event object so existing onChange handlers work without modification
     onChange({ target: { value: String(optionValue) } });
     setIsOpen(false);
@@ -28,7 +37,7 @@ export default function StitchSelect({ value, onChange, options, className = '' 
   });
   
   const displayLabel = selectedOption 
-    ? (typeof selectedOption === 'object' ? selectedOption.label : selectedOption) 
+    ? (typeof selectedOption === 'object' ? selectedOption.label : String(selectedOption)) 
     : 'Select...';
 
   // Extract base classes like height and padding if provided, else use defaults

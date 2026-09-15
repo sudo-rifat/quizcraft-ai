@@ -2,16 +2,22 @@ import React, { useRef } from 'react';
 import { db } from '../db/db';
 import { useActiveProfile } from '../context/ProfileContext';
 import { useProfileResults } from '../hooks/useProfileResults';
+import { ExamResult } from '../types';
 
-export default function ProgressDashboard({ showToast, onViewResult }) {
-  const fileInputRef = useRef(null);
+interface ProgressDashboardProps {
+  showToast: (type: string, message: string) => void;
+  onViewResult: (result: ExamResult) => void;
+}
+
+export default function ProgressDashboard({ showToast, onViewResult }: ProgressDashboardProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { activeProfileId, activeProfile } = useActiveProfile();
 
   const history = useProfileResults(activeProfileId);
   const totalTests = history.length;
   
   const averageScore = totalTests > 0 
-    ? Math.round(history.reduce((acc, curr) => acc + (curr.percentage || 0), 0) / totalTests) 
+    ? Math.round(history.reduce((acc, curr) => acc + ((curr as any).percentage || 0), 0) / totalTests) 
     : 0;
 
   const averageAccuracy = totalTests > 0 
@@ -33,12 +39,13 @@ export default function ProgressDashboard({ showToast, onViewResult }) {
     showToast('success', 'Backup downloaded successfully!');
   };
 
-  const handleImportFile = (file) => {
+  const handleImportFile = (file: File | undefined) => {
     if (!file || !activeProfileId) return;
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const parsed = JSON.parse(e.target.result);
+        const result = e.target?.result as string;
+        const parsed = JSON.parse(result);
         if (Array.isArray(parsed)) {
           const recordsToImport = parsed.map(record => ({
             ...record,
@@ -56,7 +63,7 @@ export default function ProgressDashboard({ showToast, onViewResult }) {
     reader.readAsText(file);
   };
 
-  const handleDeleteItem = async (id) => {
+  const handleDeleteItem = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this record?')) {
       await db.examResults.delete(id);
       showToast('info', 'Record deleted.');
@@ -82,7 +89,7 @@ export default function ProgressDashboard({ showToast, onViewResult }) {
             type="file"
             accept=".json"
             className="hidden"
-            onChange={(e) => handleImportFile(e.target.files[0])}
+            onChange={(e) => handleImportFile(e.target.files?.[0])}
           />
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -146,19 +153,19 @@ export default function ProgressDashboard({ showToast, onViewResult }) {
                         {rec.quiz_title}
                       </h3>
                       <p className="text-xs font-body text-outline mt-0.5">
-                        {dateStr} • {rec.quiz_data?.questions?.length || 20} Questions
+                        {dateStr} • {(rec as any).quiz_data?.questions?.length || 20} Questions
                       </p>
                     </div>
 
                     <span className="px-2.5 py-1 rounded-full bg-surface-container text-primary font-headline text-xs font-bold shrink-0">
-                      {rec.percentage}%
+                      {(rec as any).percentage}%
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs font-body text-on-surface-variant pt-1">
-                    <span>Score: {rec.score} / {rec.maxScore}</span>
+                    <span>Score: {rec.score} / {(rec as any).maxScore}</span>
                     <span>Accuracy: {rec.accuracy}%</span>
-                    <span>Time: {rec.timeSpentFormatted}</span>
+                    <span>Time: {(rec as any).timeSpentFormatted}</span>
                   </div>
 
                   <div className="flex items-center gap-2 pt-2 border-t border-surface-container">

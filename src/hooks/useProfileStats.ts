@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { useProfileResults } from './useProfileResults';
+import { ExamResult } from '../types';
 
-export function useProfileStats(profileId) {
+export function useProfileStats(profileId: string | null | undefined) {
   const results = useProfileResults(profileId);
 
   const stats = useMemo(() => {
@@ -14,8 +15,8 @@ export function useProfileStats(profileId) {
         averageScore: 0,
         bestScore: 0,
         totalQuestionsSolved: 0,
-        recentQuizzes: [],
-        latestUnfinished: null
+        recentQuizzes: [] as ExamResult[],
+        latestUnfinished: null as ExamResult | null
       };
     }
 
@@ -33,7 +34,7 @@ export function useProfileStats(profileId) {
     }, 0);
 
     const recentQuizzes = results.slice(0, 3);
-    const latestUnfinished = results.find(r => r.unattemptedCount > 0) || null;
+    const latestUnfinished = results.find(r => r.unattemptedCount && r.unattemptedCount > 0) || null;
 
     return {
       totalQuizzes,

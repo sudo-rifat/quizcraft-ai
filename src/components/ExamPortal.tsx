@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Quiz } from '../types';
 
-export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToast }) {
-  const [answers, setAnswers] = useState(() => {
+interface ExamPortalProps {
+  quizData: Quiz;
+  examConfig: any;
+  onSubmitExam: (data: { userAnswers: Record<string, number>; timeSpentSecs: number }) => void;
+  showToast: (type: string, message: string) => void;
+}
+
+export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToast }: ExamPortalProps) {
+  const [answers, setAnswers] = useState<Record<string, number>>(() => {
     const saved = sessionStorage.getItem(`quiz_answers_${quizData.quiz_title}`);
     return saved ? JSON.parse(saved) : {};
   });
-  const [flagged, setFlagged] = useState({});
+  const [flagged, setFlagged] = useState<Record<string, boolean>>({});
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
@@ -16,11 +24,11 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
     return saved ? parseInt(saved, 10) : initialTimerSeconds;
   });
 
-  const timerRef = useRef(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Prevent accidental back/refresh
   useEffect(() => {
-    const handleBeforeUnload = (e) => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = '';
     };
@@ -35,7 +43,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
         const next = prev - 1;
         sessionStorage.setItem(`quiz_timer_${quizData.quiz_title}`, next.toString());
         if (next <= 0) {
-          clearInterval(timerRef.current);
+          if (timerRef.current) clearInterval(timerRef.current);
           showToast('warning', 'Time is up! Submitting exam automatically...');
           handleSubmit();
           return 0;
@@ -57,7 +65,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
   const totalQuestions = quizData.questions.length;
 
   // Keyboard navigation
-  const handleKeyDown = useCallback((e) => {
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (showConfirmModal) return;
     
     if (e.key === 'ArrowRight' && currentQuestionIndex < totalQuestions - 1) {

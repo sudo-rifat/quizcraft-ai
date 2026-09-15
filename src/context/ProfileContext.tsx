@@ -1,15 +1,37 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initDatabase } from '../db/db';
 import * as profileService from '../services/profileService';
+import { Profile } from '../types';
 
-const ProfileContext = createContext(null);
+interface ProfileContextType {
+  profiles: Profile[];
+  activeProfile: Profile | null;
+  activeProfileId: string | null;
+  isLoading: boolean;
+  isProfileSelectorOpen: boolean;
+  setIsProfileSelectorOpen: (isOpen: boolean) => void;
+  isSwitcherOpen: boolean;
+  setIsSwitcherOpen: (isOpen: boolean) => void;
+  isManagementOpen: boolean;
+  setIsManagementOpen: (isOpen: boolean) => void;
+  createProfile: (data: profileService.CreateProfileParams) => Promise<Profile>;
+  switchProfile: (profileId: string, pinInput?: string | null) => Promise<void>;
+  updateProfile: (id: string, updates: profileService.UpdateProfileParams) => Promise<Profile | undefined>;
+  deleteProfile: (id: string) => Promise<void>;
+}
+
+const ProfileContext = createContext<ProfileContextType | null>(null);
 
 export const ACTIVE_PROFILE_KEY = 'quizcraft_active_profile_id';
 
-export function ProfileProvider({ children }) {
+interface ProfileProviderProps {
+  children: ReactNode;
+}
+
+export function ProfileProvider({ children }: ProfileProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
-  const [activeProfileId, setActiveProfileIdState] = useState(() => {
+  const [activeProfileId, setActiveProfileIdState] = useState<string | null>(() => {
     return localStorage.getItem(ACTIVE_PROFILE_KEY) || null;
   });
   
@@ -59,7 +81,7 @@ export function ProfileProvider({ children }) {
 
   const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
 
-  const setActiveProfileId = (id) => {
+  const setActiveProfileId = (id: string | null) => {
     if (id) {
       localStorage.setItem(ACTIVE_PROFILE_KEY, id);
       setActiveProfileIdState(id);
@@ -69,14 +91,14 @@ export function ProfileProvider({ children }) {
     }
   };
 
-  const createProfile = async (data) => {
+  const createProfile = async (data: profileService.CreateProfileParams): Promise<Profile> => {
     const newProfile = await profileService.createProfile(data);
     setActiveProfileId(newProfile.id);
     setIsProfileSelectorOpen(false);
     return newProfile;
   };
 
-  const switchProfile = async (profileId, pinInput = null) => {
+  const switchProfile = async (profileId: string, pinInput: string | null = null): Promise<void> => {
     const target = profiles.find(p => p.id === profileId);
     if (!target) {
       throw new Error('Profile not found.');
@@ -97,12 +119,12 @@ export function ProfileProvider({ children }) {
     setIsSwitcherOpen(false);
   };
 
-  const updateProfile = async (id, updates) => {
+  const updateProfile = async (id: string, updates: profileService.UpdateProfileParams): Promise<Profile | undefined> => {
     const updated = await profileService.updateProfile(id, updates);
     return updated;
   };
 
-  const deleteProfile = async (id) => {
+  const deleteProfile = async (id: string): Promise<void> => {
     await profileService.deleteProfile(id);
     if (activeProfileId === id) {
       const remaining = profiles.filter(p => p.id !== id);
@@ -115,7 +137,7 @@ export function ProfileProvider({ children }) {
     }
   };
 
-  const value = {
+  const value: ProfileContextType = {
     profiles,
     activeProfile,
     activeProfileId,
@@ -139,7 +161,7 @@ export function ProfileProvider({ children }) {
   );
 }
 
-export function useActiveProfile() {
+export function useActiveProfile(): ProfileContextType {
   const context = useContext(ProfileContext);
   if (!context) {
     throw new Error('useActiveProfile must be used within a ProfileProvider');

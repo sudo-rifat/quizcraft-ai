@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
+import { ExamResult } from '../types';
 
-export default function ResultPortal({ resultRecord, onRetake, onGoHome }) {
+interface ResultPortalProps {
+  resultRecord: ExamResult;
+  onRetake: () => void;
+  onGoHome: () => void;
+}
+
+export default function ResultPortal({ resultRecord, onRetake, onGoHome }: ResultPortalProps) {
   const { 
     quiz_title, 
     score, 
@@ -14,10 +21,10 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }) {
     timeSpentFormatted, 
     user_answers, 
     quiz_data 
-  } = resultRecord;
+  } = resultRecord as any;
 
   const [filterTab, setFilterTab] = useState('all');
-  const [expandedId, setExpandedId] = useState(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   useEffect(() => {
     if (percentage >= 80) {
@@ -27,7 +34,7 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }) {
     }
   }, [percentage]);
 
-  const filteredQuestions = quiz_data.questions.filter((q, idx) => {
+  const filteredQuestions = quiz_data.questions.filter((q: any, idx: number) => {
     const qId = q.id || (idx + 1);
     const userChoice = user_answers[qId];
     const isCorrect = userChoice === q.correct_answer;
@@ -193,7 +200,7 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }) {
 
         {/* Review Cards */}
         <div className="space-y-2.5">
-          {filteredQuestions.map((q, idx) => {
+          {filteredQuestions.map((q: any, idx: number) => {
             const qId = q.id || (idx + 1);
             const userChoice = user_answers[qId];
             const correctChoice = q.correct_answer;
@@ -240,7 +247,7 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }) {
                 {isExpanded && (
                   <div className="mt-3 pt-3 border-t border-surface-container space-y-3">
                     <div className="space-y-1.5">
-                      {q.options.map((optText, optIdx) => {
+                      {q.options.map((optText: string, optIdx: number) => {
                         const isTargetCorrect = optIdx === correctChoice;
                         const isUserWrongChoice = optIdx === userChoice && !isCorrect;
 

@@ -2,7 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, Sliders, Code, Copy, ArrowRight } from 'lucide-react';
 import StitchSelect from './StitchSelect';
 
-export default function PromptBuilder({ onNextStep, showToast }) {
+interface PromptBuilderProps {
+  onNextStep: () => void;
+  showToast: (type: string, message: string) => void;
+}
+
+export default function PromptBuilder({ onNextStep, showToast }: PromptBuilderProps) {
   const [grade, setGrade] = useState('নবম-দশম (Class 9-10 / SSC)');
   const [subject, setSubject] = useState('');
   const [chapter, setChapter] = useState('');

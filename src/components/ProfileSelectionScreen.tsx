@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useActiveProfile } from '../context/ProfileContext';
 import StitchSelect from './StitchSelect';
+import { Profile } from '../types';
 
 const PRESET_COLORS = ['#006a60', '#00658f', '#6750a4', '#984061', '#705d00', '#825500', '#2b6b37', '#9c4300'];
 const GRADE_OPTIONS = [
@@ -10,11 +11,15 @@ const GRADE_OPTIONS = [
   'Admission Test', 'Job / BCS', 'General Learning'
 ];
 
-export default function ProfileSelectionScreen({ showToast }) {
+interface ProfileSelectionScreenProps {
+  showToast?: (type: string, message: string) => void;
+}
+
+export default function ProfileSelectionScreen({ showToast }: ProfileSelectionScreenProps) {
   const { profiles, switchProfile, createProfile } = useActiveProfile();
 
   const [isCreating, setIsCreating] = useState(false);
-  const [selectedForPin, setSelectedForPin] = useState(null);
+  const [selectedForPin, setSelectedForPin] = useState<Profile | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
 
@@ -24,7 +29,7 @@ export default function ProfileSelectionScreen({ showToast }) {
   const [color, setColor] = useState('#006a60');
   const [pin, setPin] = useState('');
 
-  const handleSelectProfile = async (profile) => {
+  const handleSelectProfile = async (profile: Profile) => {
     if (profile.pinEnabled) {
       setSelectedForPin(profile);
       setPinInput('');
@@ -32,13 +37,13 @@ export default function ProfileSelectionScreen({ showToast }) {
     } else {
       try {
         await switchProfile(profile.id);
-      } catch (err) {
+      } catch (err: any) {
         showToast?.('error', err.message);
       }
     }
   };
 
-  const handlePinSubmit = async (e) => {
+  const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedForPin) return;
 
@@ -46,12 +51,12 @@ export default function ProfileSelectionScreen({ showToast }) {
       await switchProfile(selectedForPin.id, pinInput);
       setSelectedForPin(null);
       setPinInput('');
-    } catch (err) {
+    } catch (err: any) {
       setPinError(err.message || 'Incorrect PIN');
     }
   };
 
-  const handleCreateSubmit = async (e) => {
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       showToast?.('warning', 'Please enter a student name');
@@ -66,7 +71,7 @@ export default function ProfileSelectionScreen({ showToast }) {
           type: 'initial',
           value: name.trim().charAt(0).toUpperCase(),
           color
-        },
+        } as any,
         pin: pin.trim() ? pin.trim() : null
       });
 
@@ -74,7 +79,7 @@ export default function ProfileSelectionScreen({ showToast }) {
       setIsCreating(false);
       setName('');
       setPin('');
-    } catch (err) {
+    } catch (err: any) {
       showToast?.('error', err.message);
     }
   };

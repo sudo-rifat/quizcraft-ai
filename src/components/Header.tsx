@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Brain, Wand2, FileCode, Edit3, History, Menu, X } from 'lucide-react';
 
-export default function Header({ currentTab, onSwitchTab, savedHistoryCount }) {
+interface HeaderProps {
+  currentTab: string;
+  onSwitchTab: (tabId: string) => void;
+  savedHistoryCount: number;
+}
+
+export default function Header({ currentTab, onSwitchTab, savedHistoryCount }: HeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const navItems = [

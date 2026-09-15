@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, initSettings, defaultSettings } from './db/db';
+import { db, defaultSettings } from './db/db';
 
 import { ProfileProvider, useActiveProfile } from './context/ProfileContext';
 import ProfileSelectionScreen from './components/ProfileSelectionScreen';
@@ -15,16 +15,24 @@ import ResultPortal from './components/ResultPortal';
 import ProgressDashboard from './components/ProgressDashboard';
 import Settings from './components/Settings';
 
+import { Quiz, ExamResult } from './types';
+
+interface Toast {
+  id: number;
+  type: string;
+  message: string;
+}
+
 function AppContent() {
   const [currentTab, setCurrentTab] = useState('home');
-  const [activeQuiz, setActiveQuiz] = useState(null);
-  const [examConfig, setExamConfig] = useState(null);
-  const [activeResultRecord, setActiveResultRecord] = useState(null);
-  const [toasts, setToasts] = useState([]);
+  const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
+  const [examConfig, setExamConfig] = useState<any>(null);
+  const [activeResultRecord, setActiveResultRecord] = useState<ExamResult | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   // Active Exam Switch Profile Prompt State
-  const [pendingSwitchAction, setPendingSwitchAction] = useState(null);
+  const [pendingSwitchAction, setPendingSwitchAction] = useState<(() => void) | null>(null);
 
   const {
     activeProfileId,
@@ -74,7 +82,7 @@ function AppContent() {
     }
   }, [prefs?.theme]);
 
-  const showToast = (type, message) => {
+  const showToast = (type: string, message: string) => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
@@ -82,13 +90,13 @@ function AppContent() {
     }, 4000);
   };
 
-  const handleStartExam = ({ quiz, config }) => {
+  const handleStartExam = ({ quiz, config }: { quiz: Quiz; config: any }) => {
     setActiveQuiz(quiz);
     setExamConfig(config);
     setCurrentTab('exam');
   };
 
-  const handleSubmitExam = async ({ userAnswers, timeSpentSecs }) => {
+  const handleSubmitExam = async ({ userAnswers, timeSpentSecs }: { userAnswers: Record<string, number>; timeSpentSecs: number }) => {
     if (!activeQuiz || !activeProfileId) return;
 
     let correctCount = 0;
@@ -123,12 +131,12 @@ function AppContent() {
     const secsSpent = timeSpentSecs % 60;
     const timeSpentFormatted = `${minsSpent.toString().padStart(2, '0')}:${secsSpent.toString().padStart(2, '0')}`;
 
-    const record = {
+    const record: ExamResult = {
       id: 'quiz_rec_' + Date.now(),
       profileId: activeProfileId, // CRITICAL: Explicit profile ID isolation
       timestamp: new Date().toISOString(),
       quiz_title: activeQuiz.quiz_title,
-      quiz_data: activeQuiz,
+      quiz_data: activeQuiz as any,
       exam_config: examConfig,
       user_answers: userAnswers,
       score,
@@ -148,7 +156,7 @@ function AppContent() {
     setCurrentTab('result');
   };
 
-  const handleRequestSwitchProfile = (switchAction) => {
+  const handleRequestSwitchProfile = (switchAction: () => void) => {
     if (currentTab === 'exam') {
       setPendingSwitchAction(() => switchAction);
     } else {
@@ -206,7 +214,14 @@ function AppContent() {
 
         <div className="w-full">
           {currentTab === 'home' && (
-            <HomeDashboard onSwitchTab={setCurrentTab} />
+            <HomeDashboard
+              onSwitchTab={setCurrentTab}
+              onViewResult={(rec) => {
+                setActiveResultRecord(rec);
+                setCurrentTab('result');
+              }}
+              onStartExam={handleStartExam}
+            />
           )}
 
           {currentTab === 'create' && (
@@ -226,7 +241,7 @@ function AppContent() {
             <ResultPortal
               resultRecord={activeResultRecord}
               onRetake={() => {
-                setActiveQuiz(activeResultRecord.quiz_data);
+                setActiveQuiz(activeResultRecord.quiz_data as any);
                 setExamConfig(activeResultRecord.exam_config);
                 setCurrentTab('exam');
               }}

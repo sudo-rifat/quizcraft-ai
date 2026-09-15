@@ -1,16 +1,26 @@
 import React, { useState } from 'react';
 import { useActiveProfile } from '../context/ProfileContext';
+import { Profile } from '../types';
 
-export default function ProfileSwitcherBottomSheet({ isOpen, onClose, onOpenManagement, showToast, currentTab, onRequestSwitchProfile }) {
+interface ProfileSwitcherBottomSheetProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onOpenManagement?: () => void;
+  showToast?: (type: string, message: string) => void;
+  currentTab: string;
+  onRequestSwitchProfile: (action: () => void) => void;
+}
+
+export default function ProfileSwitcherBottomSheet({ isOpen, onClose, onOpenManagement, showToast, currentTab, onRequestSwitchProfile }: ProfileSwitcherBottomSheetProps) {
   const { profiles, activeProfile, switchProfile, setIsProfileSelectorOpen } = useActiveProfile();
 
-  const [selectedForPin, setSelectedForPin] = useState(null);
+  const [selectedForPin, setSelectedForPin] = useState<Profile | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
 
   if (!isOpen) return null;
 
-  const handleSelect = async (profile) => {
+  const handleSelect = async (profile: Profile) => {
     if (profile.id === activeProfile?.id) {
       onClose();
       return;
@@ -26,7 +36,7 @@ export default function ProfileSwitcherBottomSheet({ isOpen, onClose, onOpenMana
     await performSwitch(profile);
   };
 
-  const performSwitch = async (profile) => {
+  const performSwitch = async (profile: Profile) => {
     if (profile.pinEnabled) {
       setSelectedForPin(profile);
       setPinInput('');
@@ -36,13 +46,13 @@ export default function ProfileSwitcherBottomSheet({ isOpen, onClose, onOpenMana
         await switchProfile(profile.id);
         onClose();
         showToast?.('success', `Switched to ${profile.name}`);
-      } catch (err) {
+      } catch (err: any) {
         showToast?.('error', err.message);
       }
     }
   };
 
-  const handlePinSubmit = async (e) => {
+  const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedForPin) return;
 
@@ -51,7 +61,7 @@ export default function ProfileSwitcherBottomSheet({ isOpen, onClose, onOpenMana
       setSelectedForPin(null);
       onClose();
       showToast?.('success', `Switched to ${selectedForPin.name}`);
-    } catch (err) {
+    } catch (err: any) {
       setPinError(err.message || 'Incorrect PIN');
     }
   };

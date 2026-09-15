@@ -2,16 +2,26 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FileCode, Lightbulb, Atom, BookOpen, Languages, Settings, Play, AlertTriangle, CheckCircle, UploadCloud, Eye, Clock } from 'lucide-react';
 import StitchSelect from './StitchSelect';
 import { SAMPLE_QUIZZES } from '../data/sampleQuizzes';
+import { Quiz } from '../types';
 
-export default function JsonImporter({ onStartExam, showToast }) {
+interface JsonImporterProps {
+  onStartExam: (data: { quiz: Quiz; config: any }) => void;
+  showToast: (type: string, message: string) => void;
+}
+
+export default function JsonImporter({ onStartExam, showToast }: JsonImporterProps) {
   const [jsonText, setJsonText] = useState('');
-  const [duration, setDuration] = useState(5);
-  const [marks, setMarks] = useState(1);
-  const [negative, setNegative] = useState(0);
+  const [duration, setDuration] = useState<number | string>(5);
+  const [marks, setMarks] = useState<number | string>(1);
+  const [negative, setNegative] = useState<number | string>(0);
 
-  const fileInputRef = useRef(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [validationState, setValidationState] = useState({
+  const [validationState, setValidationState] = useState<{
+    isValid: boolean;
+    message: string;
+    parsedQuiz: Quiz | null;
+  }>({
     isValid: false,
     message: '',
     parsedQuiz: null
@@ -50,7 +60,7 @@ export default function JsonImporter({ onStartExam, showToast }) {
         throw new Error("Empty or invalid 'questions' array.");
       }
 
-      parsed.questions.forEach((q, idx) => {
+      parsed.questions.forEach((q: any, idx: number) => {
         if (!q.question || typeof q.question !== 'string') {
           throw new Error(`Question #${idx + 1} text missing.`);
         }
@@ -68,7 +78,7 @@ export default function JsonImporter({ onStartExam, showToast }) {
         parsedQuiz: parsed
       });
 
-    } catch (err) {
+    } catch (err: any) {
       setValidationState({
         isValid: false,
         message: err.message,
@@ -77,14 +87,14 @@ export default function JsonImporter({ onStartExam, showToast }) {
     }
   }, [jsonText]);
 
-  const loadSample = (key) => {
+  const loadSample = (key: string) => {
     if (SAMPLE_QUIZZES[key]) {
       setJsonText(JSON.stringify(SAMPLE_QUIZZES[key], null, 2));
       showToast('info', 'ডেমো কুইজ ডাটা লোড হয়েছে!');
     }
   };
 
-  const handleFileUpload = (file) => {
+  const handleFileUpload = (file: File | undefined) => {
     if (!file) return;
     if (!file.name.endsWith('.json')) {
       showToast('error', 'শুধুমাত্র .json ফাইল নির্বাচন করুন!');
@@ -93,7 +103,7 @@ export default function JsonImporter({ onStartExam, showToast }) {
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      setJsonText(e.target.result);
+      setJsonText(e.target?.result as string);
       showToast('success', `"${file.name}" ফাইলটি লোড হয়েছে!`);
     };
     reader.readAsText(file);
@@ -108,9 +118,9 @@ export default function JsonImporter({ onStartExam, showToast }) {
     onStartExam({
       quiz: validationState.parsedQuiz,
       config: {
-        durationMinutes: parseInt(duration) || 5,
-        marksPerQuestion: parseFloat(marks) || 1,
-        negativeMarking: parseFloat(negative) || 0
+        durationMinutes: parseInt(String(duration)) || 5,
+        marksPerQuestion: parseFloat(String(marks)) || 1,
+        negativeMarking: parseFloat(String(negative)) || 0
       }
     });
   };
@@ -158,7 +168,7 @@ export default function JsonImporter({ onStartExam, showToast }) {
             type="file"
             accept=".json"
             className="hidden"
-            onChange={(e) => handleFileUpload(e.target.files[0])}
+            onChange={(e) => handleFileUpload(e.target.files?.[0])}
           />
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -214,7 +224,7 @@ export default function JsonImporter({ onStartExam, showToast }) {
               </span>
             </div>
             <h4 className="font-tiro font-bold text-base text-teal-950">
-              {validationState.parsedQuiz.quiz_title}
+              {validationState.parsedQuiz.title || (validationState.parsedQuiz as any).quiz_title}
             </h4>
           </div>
         )}
@@ -232,7 +242,7 @@ export default function JsonImporter({ onStartExam, showToast }) {
                   key={mins}
                   onClick={() => setDuration(mins)}
                   className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
-                    parseInt(duration) === mins ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-700'
+                    parseInt(String(duration)) === mins ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-700'
                   }`}
                 >
                   {mins}মি
