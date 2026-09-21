@@ -60,19 +60,24 @@ export default function QuizWizard({ onStartExam, onRequestStartExam, onSwitchTa
   useEffect(() => {
     if (step === 3) {
       if (creationMode === 'readymade_image') {
-        const text = `Act as an expert Academic Educator and Vision OCR Assistant. I am uploading an image containing MCQs or questions from a book, exam paper, or notebook.
+        const text = `Act as an expert Academic Educator and Vision OCR Assistant. I am attaching an image from a book, exam paper, or notebook.
+
+SMART DETECTION RULES:
+- If the image contains ready-made MCQs (questions with options A/B/C/D): Extract them exactly as they appear, identify the correct answer for each, and write a short Bengali explanation.
+- If the image contains a text passage, paragraph, or notes (no pre-made options): Generate exactly ${count} Multiple Choice Questions (MCQs) from that content. Create 4 options (A/B/C/D) for each question, mark the correct answer, and write a short Bengali explanation.
+- If the image contains BOTH MCQs and a passage: First extract the existing MCQs, then generate additional MCQs from the passage content — targeting ${count} questions total.
 
 INSTRUCTIONS:
-1. Extract all MCQs and questions visible in the attached image.
-2. Identify the correct answer for each question and write a concise Bengali explanation.
-3. Respond ONLY with a raw, valid JSON object strictly matching this schema format (no markdown fences, no explanatory text):
+1. Apply the Smart Detection Rules above based on what you see in the image.
+2. All questions and options should be in Bengali (or the same language as the image content).
+3. Respond ONLY with a raw, valid JSON object strictly matching this schema (no markdown fences, no explanatory text outside JSON):
 
 {
   "quiz_title": "Image MCQ Quiz",
   "questions": [
     {
       "id": 1,
-      "question": "Extracted question text in Bengali?",
+      "question": "Question text?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correct_answer": 0,
       "explanation": "Short Bengali explanation of why this answer is correct."
@@ -84,16 +89,22 @@ INSTRUCTIONS:
         const title = readymadeTitle.trim() || 'Readymade MCQ Quiz';
         const rawContent = readymadeText.trim() || 'Paste raw MCQs here';
 
-        const text = `Act as an expert Academic Educator. Convert the following raw MCQs, questions, or notes into structured Quiz JSON format.
+        const text = `Act as an expert Academic Educator. I am providing you raw text that may contain ready-made MCQs or plain notes/passages.
 
 Quiz Title: "${title}"
+Target Question Count: ${count}
 
-RAW QUESTIONS / NOTES INPUT:
+SMART DETECTION RULES:
+- If the text already contains MCQs (questions with options): Extract them directly, identify the correct answer, and write a short Bengali explanation for each.
+- If the text is a passage, notes, or paragraph (no pre-made options): Generate exactly ${count} MCQs from the content with 4 options (A/B/C/D) each.
+- If the text contains BOTH MCQs and passage content: Extract existing MCQs first, then generate additional questions from the passage — targeting ${count} questions total.
+
+RAW INPUT:
 ----------------------------------------
 ${rawContent}
 ----------------------------------------
 
-IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching this schema format (no markdown fences, no explanatory text):
+IMPORTANT: Respond ONLY with a raw, valid JSON object strictly matching this schema (no markdown fences, no explanatory text):
 {
   "quiz_title": "${title}",
   "questions": [
@@ -130,7 +141,7 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
         setPromptText(text);
       }
     }
-  }, [step, creationMode, grade, subject, chapter, topic, count, difficulty, readymadeTitle, readymadeText]);
+  }, [step, creationMode, grade, subject, chapter, topic, count, difficulty, readymadeTitle, readymadeText, count]);
 
   // Auto-validate JSON input
   useEffect(() => {
@@ -527,9 +538,32 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
                 value={readymadeText}
                 onChange={(e) => setReadymadeText(e.target.value)}
                 placeholder="Paste your questions or raw notes text here..."
-                rows={7}
+                rows={6}
                 className="w-full p-3 font-body text-xs rounded-xl bg-surface-container-lowest border border-outline-variant focus:outline-none focus:border-primary resize-none"
               />
+            </div>
+
+            {/* Question Count for Readymade Text */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-headline font-semibold text-on-surface">
+                Questions Count
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {['5', '10', '20', '30'].map((qCount) => (
+                  <button
+                    key={qCount}
+                    type="button"
+                    onClick={() => setCount(qCount)}
+                    className={`h-10 rounded-xl font-headline text-xs font-semibold transition-all cursor-pointer ${
+                      count === qCount
+                        ? 'bg-primary text-on-primary shadow-xs'
+                        : 'bg-surface-container-lowest border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-low'
+                    }`}
+                  >
+                    {qCount} Qs
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -604,10 +638,35 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
             </h2>
             <p className="text-xs text-outline mt-0.5 font-body">
               {creationMode === 'readymade_image'
-                ? 'Copy prompt to use with ChatGPT / Gemini photo upload'
+                ? 'Copy prompt → paste in ChatGPT/Gemini → attach photo'
                 : 'Copy AI prompt or paste quiz JSON'}
             </p>
           </div>
+
+          {/* Question Count — only for image mode */}
+          {creationMode === 'readymade_image' && (
+            <div className="space-y-1.5">
+              <label className="block text-xs font-headline font-semibold text-on-surface">
+                Questions Count
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {['5', '10', '20', '30'].map((qCount) => (
+                  <button
+                    key={qCount}
+                    type="button"
+                    onClick={() => setCount(qCount)}
+                    className={`h-10 rounded-xl font-headline text-xs font-semibold transition-all cursor-pointer ${
+                      count === qCount
+                        ? 'bg-secondary text-on-secondary shadow-xs'
+                        : 'bg-surface-container-lowest border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-low'
+                    }`}
+                  >
+                    {qCount} Qs
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2">
             <button
