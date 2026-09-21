@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, defaultSettings } from '../db/db';
 import { useActiveProfile } from '../context/ProfileContext';
@@ -11,8 +11,30 @@ export default function Settings({ showToast }: SettingsProps) {
   const prefs = useLiveQuery(() => db.settings.get('user_prefs'), []) || defaultSettings;
   const { activeProfile, activeProfileId, updateProfile, setIsManagementOpen, setIsProfileSelectorOpen } = useActiveProfile();
 
+  const [geminiKey, setGeminiKey] = useState(prefs.geminiApiKey || '');
+  const [openaiKey, setOpenaiKey] = useState(prefs.openaiApiKey || '');
+  const [provider, setProvider] = useState<'gemini' | 'openai'>(prefs.preferredAiProvider || 'gemini');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+
+  useEffect(() => {
+    setGeminiKey(prefs.geminiApiKey || '');
+    setOpenaiKey(prefs.openaiApiKey || '');
+    setProvider(prefs.preferredAiProvider || 'gemini');
+  }, [prefs.geminiApiKey, prefs.openaiApiKey, prefs.preferredAiProvider]);
+
   const updatePref = async (key: string, value: any) => {
     await db.settings.put({ ...prefs, [key]: value } as any);
+  };
+
+  const handleSaveAiKeys = async () => {
+    await db.settings.put({
+      ...prefs,
+      geminiApiKey: geminiKey.trim(),
+      openaiApiKey: openaiKey.trim(),
+      preferredAiProvider: provider,
+    } as any);
+    showToast('success', 'AI API Key settings updated successfully!');
   };
 
   const handleNameChange = async (newName: string) => {
@@ -41,7 +63,7 @@ export default function Settings({ showToast }: SettingsProps) {
           Settings & Preferences
         </h1>
         <p className="text-xs font-body text-outline mt-0.5">
-          Customize theme, student profile and data backups
+          App settings & profile management
         </p>
       </div>
 
@@ -88,6 +110,109 @@ export default function Settings({ showToast }: SettingsProps) {
             Switch Profile
           </button>
         </div>
+      </div>
+
+      {/* AI Configuration Section (Gemini & OpenAI API Keys) */}
+      <div className="rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 space-y-4 shadow-xs">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-headline font-semibold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[16px] text-primary">smart_toy</span>
+            AI Doubt Solver API Keys
+          </span>
+        </div>
+
+        {/* Preferred Provider Selector */}
+        <div>
+          <label className="block text-[11px] font-headline font-semibold text-outline mb-1.5">
+            Preferred AI Provider
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setProvider('gemini')}
+              className={`h-10 rounded-xl font-headline text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                provider === 'gemini'
+                  ? 'bg-primary/10 border-primary text-primary'
+                  : 'bg-surface-container-low border-surface-container-high text-outline'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+              Google Gemini
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setProvider('openai')}
+              className={`h-10 rounded-xl font-headline text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                provider === 'openai'
+                  ? 'bg-primary/10 border-primary text-primary'
+                  : 'bg-surface-container-low border-surface-container-high text-outline'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">psychology</span>
+              OpenAI ChatGPT
+            </button>
+          </div>
+        </div>
+
+        {/* Gemini API Key Input */}
+        <div>
+          <label className="block text-[11px] font-headline font-semibold text-outline mb-1">
+            Gemini API Key
+          </label>
+          <div className="relative">
+            <input
+              type={showGeminiKey ? 'text' : 'password'}
+              placeholder="AIzaSy..."
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+              className="w-full h-10 pl-3 pr-10 rounded-xl bg-surface-container-low border border-outline-variant/40 text-xs font-mono text-on-surface focus:outline-none focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={() => setShowGeminiKey(!showGeminiKey)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {showGeminiKey ? 'visibility_off' : 'visibility'}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* OpenAI API Key Input */}
+        <div>
+          <label className="block text-[11px] font-headline font-semibold text-outline mb-1">
+            OpenAI API Key
+          </label>
+          <div className="relative">
+            <input
+              type={showOpenaiKey ? 'text' : 'password'}
+              placeholder="sk-proj-..."
+              value={openaiKey}
+              onChange={(e) => setOpenaiKey(e.target.value)}
+              className="w-full h-10 pl-3 pr-10 rounded-xl bg-surface-container-low border border-outline-variant/40 text-xs font-mono text-on-surface focus:outline-none focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={() => setShowOpenaiKey(!showOpenaiKey)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {showOpenaiKey ? 'visibility_off' : 'visibility'}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSaveAiKeys}
+          className="w-full h-10 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs hover:bg-primary/90 transition-all cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[16px]">save</span>
+          Save AI Settings
+        </button>
       </div>
 
       {/* Appearance */}

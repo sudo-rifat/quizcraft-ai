@@ -17,7 +17,7 @@ export async function getProfileById(id: string) {
   return await db.profiles.get(id);
 }
 
-export async function createProfile({ name, grade, avatar, pin = null }: any) {
+export async function createProfile({ name, grade, subjects = ['Physics', 'Chemistry', 'Higher Math', 'Biology', 'ICT', 'English'], avatar, pin = null }: any) {
   if (!name || !name.trim()) {
     throw new Error('Profile name is required.');
   }
@@ -32,6 +32,7 @@ export async function createProfile({ name, grade, avatar, pin = null }: any) {
     id,
     name: name.trim(),
     grade: grade || 'SSC',
+    subjects: Array.isArray(subjects) ? subjects : ['Physics', 'Chemistry', 'Higher Math', 'Biology', 'ICT', 'English'],
     avatar: avatar || {
       type: 'initial',
       value: name.trim().charAt(0).toUpperCase(),

@@ -8,6 +8,7 @@ export interface Profile {
   id: string;
   name: string;
   grade: string;
+  subjects?: string[];
   avatar: Avatar;
   createdAt: number;
   updatedAt: number;
@@ -68,6 +69,9 @@ export interface Settings {
   autoSubmit: boolean;
   warnBeforeLeave: boolean;
   timerWarningSound: boolean;
+  geminiApiKey?: string;
+  openaiApiKey?: string;
+  preferredAiProvider?: 'gemini' | 'openai';
 }
 
 export interface Progress {

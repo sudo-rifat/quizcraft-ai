@@ -11,6 +11,12 @@ const GRADE_OPTIONS = [
   'Admission Test', 'Job / BCS', 'General Learning'
 ];
 
+const SUGGESTED_SUBJECTS = [
+  'Physics', 'Chemistry', 'Higher Math', 'General Math',
+  'Biology', 'ICT', 'English', 'Bangla', 'Accounting',
+  'Finance', 'Economics', 'General Knowledge'
+];
+
 interface ProfileSelectionScreenProps {
   showToast?: (type: string, message: string) => void;
 }
@@ -28,6 +34,8 @@ export default function ProfileSelectionScreen({ showToast }: ProfileSelectionSc
   const [grade, setGrade] = useState('Class 10');
   const [color, setColor] = useState('#006a60');
   const [pin, setPin] = useState('');
+  const [subjects, setSubjects] = useState<string[]>(['Physics', 'Chemistry', 'Higher Math', 'Biology', 'ICT', 'English']);
+  const [newSubjectInput, setNewSubjectInput] = useState('');
 
   const handleSelectProfile = async (profile: Profile) => {
     if (profile.pinEnabled) {
@@ -41,6 +49,19 @@ export default function ProfileSelectionScreen({ showToast }: ProfileSelectionSc
         showToast?.('error', err.message);
       }
     }
+  };
+
+  const handleAddSubject = (subjectName: string) => {
+    const trimmed = subjectName.trim();
+    if (!trimmed) return;
+    if (!subjects.includes(trimmed)) {
+      setSubjects([...subjects, trimmed]);
+    }
+    setNewSubjectInput('');
+  };
+
+  const handleRemoveSubject = (subjectToRemove: string) => {
+    setSubjects(subjects.filter((s) => s !== subjectToRemove));
   };
 
   const handlePinSubmit = async (e: React.FormEvent) => {
@@ -67,6 +88,7 @@ export default function ProfileSelectionScreen({ showToast }: ProfileSelectionSc
       await createProfile({
         name,
         grade,
+        subjects,
         avatar: {
           type: 'initial',
           value: name.trim().charAt(0).toUpperCase(),
@@ -97,7 +119,7 @@ export default function ProfileSelectionScreen({ showToast }: ProfileSelectionSc
             Who's learning today?
           </h1>
           <p className="text-xs font-body text-outline">
-            Select or create a student profile to access your custom quizzes & progress
+            Select a student profile to continue
           </p>
         </div>
 
@@ -124,7 +146,7 @@ export default function ProfileSelectionScreen({ showToast }: ProfileSelectionSc
                       {profile.name}
                     </h3>
                     <p className="text-[11px] font-body text-outline mt-0.5 truncate">
-                      {profile.grade || 'Student'}
+                      {profile.grade || 'Student'} • {profile.subjects?.length || 0} subjects
                     </p>
                   </div>
 
@@ -152,13 +174,13 @@ export default function ProfileSelectionScreen({ showToast }: ProfileSelectionSc
 
         {/* Create Profile Form */}
         {isCreating && (
-          <form onSubmit={handleCreateSubmit} className="rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-5 space-y-4 shadow-sm">
+          <form onSubmit={handleCreateSubmit} className="rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-5 space-y-4 shadow-sm max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-surface-container pb-3">
               <h2 className="font-headline text-base font-semibold text-on-surface">Create Student Profile</h2>
               <button
                 type="button"
                 onClick={() => setIsCreating(false)}
-                className="text-xs font-body text-outline hover:text-on-surface"
+                className="text-xs font-body text-outline hover:text-on-surface cursor-pointer"
               >
                 Cancel
               </button>
@@ -186,6 +208,54 @@ export default function ProfileSelectionScreen({ showToast }: ProfileSelectionSc
                 options={GRADE_OPTIONS}
                 className="w-full h-10 px-3 text-xs"
               />
+            </div>
+
+            {/* Subjects List Input */}
+            <div className="space-y-2">
+              <label className="block text-xs font-headline font-semibold text-on-surface">
+                Taught Subjects List 📚
+              </label>
+
+              <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high">
+                {subjects.map((sub) => (
+                  <span
+                    key={sub}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-headline font-semibold"
+                  >
+                    {sub}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSubject(sub)}
+                      className="hover:text-error transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">close</span>
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Type new subject..."
+                  value={newSubjectInput}
+                  onChange={(e) => setNewSubjectInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddSubject(newSubjectInput);
+                    }
+                  }}
+                  className="flex-1 h-9 px-3 rounded-xl bg-surface-container-low border border-outline-variant/40 text-xs font-body text-on-surface focus:outline-none focus:border-primary"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddSubject(newSubjectInput)}
+                  className="px-3 h-9 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold hover:bg-primary/90 cursor-pointer"
+                >
+                  + Add
+                </button>
+              </div>
             </div>
 
             {/* Color Avatar */}
@@ -221,13 +291,13 @@ export default function ProfileSelectionScreen({ showToast }: ProfileSelectionSc
               <button
                 type="button"
                 onClick={() => setIsCreating(false)}
-                className="px-4 py-2 rounded-xl text-xs font-headline font-semibold text-on-surface hover:bg-surface-container-low"
+                className="px-4 py-2 rounded-xl text-xs font-headline font-semibold text-on-surface hover:bg-surface-container-low cursor-pointer"
               >
                 Back
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-primary text-on-primary text-xs font-headline font-semibold shadow-xs hover:bg-primary/90"
+                className="px-5 py-2 rounded-xl bg-primary text-on-primary text-xs font-headline font-semibold shadow-xs hover:bg-primary/90 cursor-pointer"
               >
                 Create Profile
               </button>

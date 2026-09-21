@@ -9,6 +9,7 @@ interface HomeDashboardProps {
   onSwitchTab: (tabId: string) => void;
   onViewResult?: (result: ExamResult) => void;
   onStartExam?: (data: { quiz: Quiz; config: any }) => void;
+  onRequestStartExam?: (quiz: Quiz) => void;
 }
 
 function getGreeting() {
@@ -19,7 +20,7 @@ function getGreeting() {
   return 'Good night';
 }
 
-export default function HomeDashboard({ onSwitchTab, onViewResult, onStartExam }: HomeDashboardProps) {
+export default function HomeDashboard({ onSwitchTab, onViewResult, onStartExam, onRequestStartExam }: HomeDashboardProps) {
   const { activeProfile, activeProfileId } = useActiveProfile();
   const { totalQuizzes, averageAccuracy, bestScore, recentQuizzes } = useProfileStats(activeProfileId);
 
@@ -52,11 +53,14 @@ export default function HomeDashboard({ onSwitchTab, onViewResult, onStartExam }
   };
 
   const handleStartSaved = (sq: SavedQuiz) => {
-    if (!onStartExam) return;
-    onStartExam({
-      quiz: sq.quiz_data,
-      config: { durationMinutes: 10, marksPerQuestion: 1, negativeMarking: 0 },
-    });
+    if (onRequestStartExam) {
+      onRequestStartExam(sq.quiz_data);
+    } else if (onStartExam) {
+      onStartExam({
+        quiz: sq.quiz_data,
+        config: { durationMinutes: 10, marksPerQuestion: 1, negativeMarking: 0 },
+      });
+    }
   };
 
   return (
@@ -66,10 +70,8 @@ export default function HomeDashboard({ onSwitchTab, onViewResult, onStartExam }
         <h1 className="font-headline text-2xl font-bold tracking-tight text-on-surface">
           {getGreeting()}, {userName} 👋
         </h1>
-        <p className="text-sm text-outline mt-0.5 font-body">
-          {totalTests > 0
-            ? `You've completed ${totalTests} quiz${totalTests > 1 ? 'zes' : ''} so far. Keep it up!`
-            : 'Ready to start your first quiz session?'}
+        <p className="text-xs text-outline mt-0.5 font-body">
+          {totalTests > 0 ? `${totalTests} quiz${totalTests > 1 ? 'zes' : ''} completed` : 'Start your practice session'}
         </p>
       </section>
 
@@ -79,21 +81,18 @@ export default function HomeDashboard({ onSwitchTab, onViewResult, onStartExam }
           onClick={() => onSwitchTab('create')}
           className="group relative rounded-2xl bg-gradient-to-br from-primary to-[#004f48] p-5 text-on-primary shadow-sm hover:shadow-md transition-all active:scale-[0.99] cursor-pointer"
         >
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white">
               <span className="material-symbols-outlined text-[20px]">add</span>
             </div>
-            <span className="text-xs font-headline font-medium text-primary-fixed tracking-wide uppercase">
+            <span className="text-[11px] font-headline font-semibold text-primary-fixed tracking-wide uppercase">
               New Session
             </span>
           </div>
-          <h2 className="font-headline text-lg font-semibold text-white tracking-tight">
+          <h2 className="font-headline text-lg font-bold text-white tracking-tight">
             Create New Quiz
           </h2>
-          <p className="text-xs text-white/80 font-body mt-1 leading-relaxed">
-            Generate targeted practice questions from notes, topics, or files.
-          </p>
-          <div className="mt-4 flex items-center gap-1.5 text-xs font-headline font-medium text-primary-fixed group-hover:translate-x-0.5 transition-transform">
+          <div className="mt-3 flex items-center gap-1.5 text-xs font-headline font-semibold text-primary-fixed group-hover:translate-x-0.5 transition-transform">
             <span>Get started</span>
             <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
           </div>
@@ -114,13 +113,15 @@ export default function HomeDashboard({ onSwitchTab, onViewResult, onStartExam }
                 </span>
               )}
             </div>
-            <button
-              onClick={() => onSwitchTab('create')}
-              className="text-xs text-primary font-headline font-medium flex items-center gap-0.5 hover:underline cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[14px]">add</span>
-              Add new
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => onSwitchTab('library')}
+                className="text-xs text-primary font-headline font-medium flex items-center gap-0.5 hover:underline cursor-pointer"
+              >
+                View Library
+                <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+              </button>
+            </div>
           </div>
 
           {savedQuizzes.length === 0 ? (

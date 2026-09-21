@@ -11,6 +11,12 @@ const GRADE_OPTIONS = [
   'Admission Test', 'Job / BCS', 'General Learning'
 ];
 
+const SUGGESTED_SUBJECTS = [
+  'Physics', 'Chemistry', 'Higher Math', 'General Math',
+  'Biology', 'ICT', 'English', 'Bangla', 'Accounting',
+  'Finance', 'Economics', 'General Knowledge'
+];
+
 interface ProfileManagementModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -28,6 +34,8 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }: P
   const [grade, setGrade] = useState('Class 10');
   const [color, setColor] = useState('#006a60');
   const [pin, setPin] = useState('');
+  const [subjects, setSubjects] = useState<string[]>([]);
+  const [newSubjectInput, setNewSubjectInput] = useState('');
 
   if (!isOpen) return null;
 
@@ -36,7 +44,21 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }: P
     setName(profile.name);
     setGrade(profile.grade || 'Class 10');
     setColor(profile.avatar?.color || '#006a60');
+    setSubjects(profile.subjects || ['Physics', 'Chemistry', 'Higher Math', 'Biology', 'ICT', 'English']);
     setPin('');
+  };
+
+  const handleAddSubject = (subjectName: string) => {
+    const trimmed = subjectName.trim();
+    if (!trimmed) return;
+    if (!subjects.includes(trimmed)) {
+      setSubjects([...subjects, trimmed]);
+    }
+    setNewSubjectInput('');
+  };
+
+  const handleRemoveSubject = (subjectToRemove: string) => {
+    setSubjects(subjects.filter((s) => s !== subjectToRemove));
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -47,6 +69,7 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }: P
       await updateProfile(editingProfile.id, {
         name,
         grade,
+        subjects,
         avatar: {
           ...editingProfile.avatar,
           color,
@@ -97,6 +120,8 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }: P
             <div className="space-y-2 max-h-80 overflow-y-auto pr-0.5">
               {profiles.map((p) => {
                 const isActive = p.id === activeProfile?.id;
+                const subjCount = p.subjects?.length || 0;
+
                 return (
                   <div
                     key={p.id}
@@ -116,7 +141,9 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }: P
                             <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-bold">Active</span>
                           )}
                         </h3>
-                        <p className="text-[11px] font-body text-outline">{p.grade || 'Student'}</p>
+                        <p className="text-[11px] font-body text-outline">
+                          {p.grade || 'Student'} • {subjCount} Subject{subjCount !== 1 ? 's' : ''}
+                        </p>
                       </div>
                     </div>
 
@@ -157,7 +184,7 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }: P
 
         {/* Edit Profile Form */}
         {editingProfile && (
-          <form onSubmit={handleSaveEdit} className="space-y-4">
+          <form onSubmit={handleSaveEdit} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
             <div className="flex items-center justify-between">
               <h3 className="font-headline font-semibold text-sm text-on-surface">Edit Profile: {editingProfile.name}</h3>
               <button
@@ -188,6 +215,89 @@ export default function ProfileManagementModal({ isOpen, onClose, showToast }: P
                 options={GRADE_OPTIONS}
                 className="w-full h-10 px-3 text-xs"
               />
+            </div>
+
+            {/* Subjects List Management Section */}
+            <div className="space-y-2">
+              <label className="block text-xs font-headline font-semibold text-on-surface">
+                Taught Subjects List 📚
+              </label>
+              <p className="text-[11px] font-body text-outline">
+                Add subjects you teach this student so you can select them from a dropdown when creating quizzes.
+              </p>
+
+              {/* Active Subject Chips */}
+              <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high">
+                {subjects.length === 0 ? (
+                  <span className="text-[11px] text-outline italic">No subjects added yet.</span>
+                ) : (
+                  subjects.map((sub) => (
+                    <span
+                      key={sub}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-headline font-semibold"
+                    >
+                      {sub}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSubject(sub)}
+                        className="hover:text-error transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">close</span>
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+
+              {/* Add Custom Subject Input */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Type new subject (e.g. Higher Math)..."
+                  value={newSubjectInput}
+                  onChange={(e) => setNewSubjectInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddSubject(newSubjectInput);
+                    }
+                  }}
+                  className="flex-1 h-9 px-3 rounded-xl bg-surface-container-low border border-outline-variant/40 text-xs font-body text-on-surface focus:outline-none focus:border-primary"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddSubject(newSubjectInput)}
+                  className="px-3 h-9 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold hover:bg-primary/90 cursor-pointer"
+                >
+                  + Add
+                </button>
+              </div>
+
+              {/* Suggested Presets */}
+              <div>
+                <span className="text-[10px] font-headline font-semibold text-outline uppercase tracking-wider block mb-1">
+                  Quick Add Presets:
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {SUGGESTED_SUBJECTS.map((s) => {
+                    const isAdded = subjects.includes(s);
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => (isAdded ? handleRemoveSubject(s) : handleAddSubject(s))}
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-headline transition-all cursor-pointer ${
+                          isAdded
+                            ? 'bg-primary text-on-primary font-semibold'
+                            : 'bg-surface-container-low text-outline hover:text-on-surface hover:bg-surface-container'
+                        }`}
+                      >
+                        {isAdded ? `✓ ${s}` : `+ ${s}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <div>

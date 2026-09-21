@@ -8,10 +8,22 @@ interface NavigationProps {
 
 export default function Navigation({ currentTab, onSwitchTab }: NavigationProps) {
   const { activeProfile, setIsSwitcherOpen } = useActiveProfile();
+  const [isOffline, setIsOffline] = React.useState(!navigator.onLine);
+
+  React.useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const navItems = [
     { id: 'home', label: 'Home', icon: 'home' },
-    { id: 'create', label: 'Create', icon: 'add_circle' },
+    { id: 'library', label: 'Library', icon: 'local_library' },
     { id: 'progress', label: 'Progress', icon: 'trending_up' },
     { id: 'history', label: 'History', icon: 'history' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
@@ -29,7 +41,7 @@ export default function Navigation({ currentTab, onSwitchTab }: NavigationProps)
             <span className="font-headline font-semibold text-lg tracking-tight text-on-surface">QuizCraft AI</span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {/* Desktop Navigation Links */}
             <nav className="hidden md:flex items-center gap-1 bg-surface-container-low p-1 rounded-xl border border-surface-container/80">
               {navItems.map((item) => {
@@ -50,6 +62,15 @@ export default function Navigation({ currentTab, onSwitchTab }: NavigationProps)
                 );
               })}
             </nav>
+
+            {/* Offline/Online Status Light Dot */}
+            <div 
+              className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-surface-container-low border border-surface-container-high text-[11px] font-headline text-outline cursor-default"
+              title={isOffline ? 'Offline Mode — Operating locally with IndexedDB' : 'Online'}
+            >
+              <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+              <span className="hidden sm:inline font-medium">{isOffline ? 'Offline' : 'Online'}</span>
+            </div>
 
             {/* Active Student Profile Avatar */}
             <button 
@@ -81,12 +102,12 @@ export default function Navigation({ currentTab, onSwitchTab }: NavigationProps)
               <button
                 key={item.id}
                 onClick={() => onSwitchTab(item.id)}
-                className={`flex flex-col items-center justify-center gap-1 w-14 py-1 cursor-pointer transition-colors ${
+                className={`flex flex-col items-center justify-center gap-0.5 w-14 py-1 cursor-pointer transition-colors ${
                   isActive ? 'text-primary' : 'text-outline hover:text-on-surface'
                 }`}
               >
-                <span className="material-symbols-outlined text-[22px]">{item.icon}</span>
-                <span className={`text-[11px] font-headline ${isActive ? 'font-semibold' : 'font-medium'}`}>
+                <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
+                <span className={`text-[10px] font-headline tracking-tight ${isActive ? 'font-semibold' : 'font-medium'}`}>
                   {item.label}
                 </span>
               </button>

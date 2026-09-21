@@ -6,20 +6,32 @@ import { useActiveProfile } from '../context/ProfileContext';
 
 interface QuizWizardProps {
   onStartExam: (data: { quiz: Quiz; config: any }) => void;
+  onRequestStartExam?: (quiz: Quiz) => void;
+  onSwitchTab?: (tabId: string) => void;
   showToast: (type: string, message: string) => void;
 }
 
-export default function QuizWizard({ onStartExam, showToast }: QuizWizardProps) {
-  const { activeProfileId } = useActiveProfile();
+export default function QuizWizard({ onStartExam, onRequestStartExam, onSwitchTab, showToast }: QuizWizardProps) {
+  const { activeProfile, activeProfileId } = useActiveProfile();
+  const [creationMode, setCreationMode] = useState<'topic' | 'readymade_text' | 'readymade_image' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Step 1: Topic Data
-  const [grade, setGrade] = useState('নবম-দশম (SSC)');
-  const [subject, setSubject] = useState('');
+  const availableSubjects = activeProfile?.subjects && activeProfile.subjects.length > 0
+    ? activeProfile.subjects
+    : ['Physics', 'Chemistry', 'Higher Math', 'Biology', 'ICT', 'English'];
+
+  // Topic Mode State
+  const [grade, setGrade] = useState(() => activeProfile?.grade || 'Class 10');
+  const [subject, setSubject] = useState(() => availableSubjects[0] || 'Physics');
+  const [isCustomSubject, setIsCustomSubject] = useState(false);
   const [chapter, setChapter] = useState('');
   const [topic, setTopic] = useState('');
+
+  // Readymade Text Mode State
+  const [readymadeTitle, setReadymadeTitle] = useState('');
+  const [readymadeText, setReadymadeText] = useState('');
 
   // Step 2: Difficulty & Settings
   const [difficulty, setDifficulty] = useState('intermediate');
@@ -27,115 +39,135 @@ export default function QuizWizard({ onStartExam, showToast }: QuizWizardProps) 
   const [duration, setDuration] = useState('10');
   const [marks, setMarks] = useState('1');
   const [negative, setNegative] = useState('0');
-  const [includeMissed, setIncludeMissed] = useState(true);
 
   // Step 3: Prompt & JSON
   const [promptText, setPromptText] = useState('');
   const [jsonText, setJsonText] = useState('');
   const [validation, setValidation] = useState<{ isValid: boolean; message: string; parsed: Quiz | null }>({ isValid: false, message: '', parsed: null });
 
-  // Generate AI Prompt
+  useEffect(() => {
+    if (activeProfile?.grade) {
+      setGrade(activeProfile.grade);
+    }
+    if (activeProfile?.subjects && activeProfile.subjects.length > 0) {
+      if (!subject || (!isCustomSubject && !activeProfile.subjects.includes(subject))) {
+        setSubject(activeProfile.subjects[0]);
+      }
+    }
+  }, [activeProfile?.grade, activeProfile?.subjects]);
+
+  // Generate AI Prompt tailored to the exact Creation Mode
   useEffect(() => {
     if (step === 3) {
-      const sub = subject.trim() || 'Physics';
-      const ch = chapter.trim() || 'Chapter 4';
-      const top = topic.trim() || 'Core Concepts';
+      if (creationMode === 'readymade_image') {
+        const text = `Act as an expert Academic Educator and Vision OCR Assistant. I am uploading an image containing MCQs or questions from a book, exam paper, or notebook.
 
-      const text = `Act as an expert Academic Educator. Generate exactly ${count} Multiple Choice Questions (MCQs) in Bengali for Level: ${grade}, Subject: "${sub}", Chapter: "${ch}", Specific Topics: "${top}", Difficulty: ${difficulty}.
+INSTRUCTIONS:
+1. Extract all MCQs and questions visible in the attached image.
+2. Identify the correct answer for each question and write a concise Bengali explanation.
+3. Respond ONLY with a raw, valid JSON object strictly matching this schema format (no markdown fences, no explanatory text):
 
-CRITICAL INSTRUCTIONS:
-1. You MUST return ONLY valid JSON. Absolutely no markdown blocks, no \`\`\`json, no introductory or concluding text. 
-2. The very first character of your response MUST be "{" and the last MUST be "}".
-3. Ensure all keys and string values are enclosed in double quotes (").
-4. Ensure the JSON is well-formed with correct commas.
-5. "correct_answer" MUST be an integer between 0 and 3, representing the 0-indexed position in the "options" array.
-6. "options" MUST contain exactly 4 unique strings.
-7. "id" MUST be an integer starting from 1.
-
-STRICT JSON STRUCTURE TO FOLLOW:
 {
-  "quiz_title": "${sub}: ${ch} (${top})",
+  "quiz_title": "Image MCQ Quiz",
   "questions": [
     {
       "id": 1,
-      "question": "Sample Question Text?",
+      "question": "Extracted question text in Bengali?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correct_answer": 0,
-      "explanation": "Short explanation for the correct answer"
+      "explanation": "Short Bengali explanation of why this answer is correct."
     }
   ]
 }`;
-      setPromptText(text);
-    }
-  }, [step, grade, subject, chapter, topic, count, difficulty]);
+        setPromptText(text);
+      } else if (creationMode === 'readymade_text') {
+        const title = readymadeTitle.trim() || 'Readymade MCQ Quiz';
+        const rawContent = readymadeText.trim() || 'Paste raw MCQs here';
 
-  // JSON Validation
+        const text = `Act as an expert Academic Educator. Convert the following raw MCQs, questions, or notes into structured Quiz JSON format.
+
+Quiz Title: "${title}"
+
+RAW QUESTIONS / NOTES INPUT:
+----------------------------------------
+${rawContent}
+----------------------------------------
+
+IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching this schema format (no markdown fences, no explanatory text):
+{
+  "quiz_title": "${title}",
+  "questions": [
+    {
+      "id": 1,
+      "question": "Question text?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correct_answer": 0,
+      "explanation": "Short Bengali explanation of why this answer is correct."
+    }
+  ]
+}`;
+        setPromptText(text);
+      } else {
+        const sub = subject.trim() || 'Physics';
+        const ch = chapter.trim() || 'Chapter 4';
+        const top = topic.trim() || 'Core Concepts';
+
+        const text = `Act as an expert Academic Educator. Generate exactly ${count} Multiple Choice Questions (MCQs) in Bengali for Level: ${grade}, Subject: "${sub}", Chapter: "${ch}", Specific Topics: "${top}", Difficulty: ${difficulty}.
+
+IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching this schema format (no markdown fences, no explanatory text):
+{
+  "quiz_title": "${sub}: ${ch} - ${top}",
+  "questions": [
+    {
+      "id": 1,
+      "question": "Question text in Bengali?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correct_answer": 0,
+      "explanation": "Short Bengali explanation of why this answer is correct."
+    }
+  ]
+}`;
+        setPromptText(text);
+      }
+    }
+  }, [step, creationMode, grade, subject, chapter, topic, count, difficulty, readymadeTitle, readymadeText]);
+
+  // Auto-validate JSON input
   useEffect(() => {
-    const text = jsonText.trim();
-    if (!text) {
-      setValidation({ isValid: false, message: 'JSON Data required.', parsed: null });
+    if (!jsonText.trim()) {
+      setValidation({ isValid: false, message: '', parsed: null });
       return;
     }
 
     try {
-      let sanitizedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const cleaned = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
 
-      // Temporarily mask double backslashes so we don't double-escape them
-      sanitizedText = sanitizedText.replace(/\\\\/g, '@@DOUBLE_SLASH@@');
-
-      // Auto-escape LaTeX macros that start with valid JSON escape characters
-      sanitizedText = sanitizedText.replace(/\\(text|tan|theta|tau|times|to|top|triangle|tilde|nu|nabla|neq|ni|notin|rho|right|rangle|rightarrow|frac|forall|flat|beta|bot|bullet|bar|bf)/g, '\\\\$1');
-
-      // Auto-escape unescaped backslashes for other LaTeX
-      sanitizedText = sanitizedText.replace(/\\([^"\\/bfnrtu])/g, '\\\\$1');
-
-      // Restore the double backslashes
-      sanitizedText = sanitizedText.replace(/@@DOUBLE_SLASH@@/g, '\\\\');
-
-      const parsed = JSON.parse(sanitizedText);
-
-      if (!parsed.quiz_title || !Array.isArray(parsed.questions) || parsed.questions.length === 0) {
-        throw new Error("Invalid structure: missing 'quiz_title' or 'questions' array.");
+      if (parsed && parsed.quiz_title && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+        setValidation({ isValid: true, message: '✓ Valid Quiz Format', parsed });
+      } else {
+        setValidation({ isValid: false, message: 'Missing required quiz_title or questions array.', parsed: null });
       }
-
-      parsed.questions.forEach((q: any, idx: number) => {
-        if (!q.question || !Array.isArray(q.options) || q.options.length < 2) {
-          throw new Error(`Question ${idx + 1}: Invalid question or options array.`);
-        }
-        if (typeof q.correct_answer !== 'number' || q.correct_answer < 0 || q.correct_answer >= q.options.length) {
-          throw new Error(`Question ${idx + 1}: Invalid correct answer index.`);
-        }
-      });
-
-      setValidation({ isValid: true, message: `JSON Valid (${parsed.questions.length} Questions)`, parsed });
-    } catch (err: any) {
-      setValidation({ isValid: false, message: err.message, parsed: null });
+    } catch (e: any) {
+      setValidation({ isValid: false, message: 'JSON Syntax Error: ' + e.message, parsed: null });
     }
   }, [jsonText]);
 
-  const handleFixJson = () => {
-    let fixed = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-    fixed = fixed.replace(/\\\\/g, '@@DOUBLE_SLASH@@');
-    fixed = fixed.replace(/\\(text|tan|theta|tau|times|to|top|triangle|tilde|nu|nabla|neq|ni|notin|rho|right|rangle|rightarrow|frac|forall|flat|beta|bot|bullet|bar|bf)/g, '\\\\$1');
-    fixed = fixed.replace(/\\([^"\\/bfnrtu])/g, '\\\\$1');
-    fixed = fixed.replace(/@@DOUBLE_SLASH@@/g, '\\\\');
-
-    try {
-      JSON.parse(fixed);
-      setJsonText(fixed);
-      showToast('success', 'JSON formatting fixed automatically!');
-    } catch (e) {
-      showToast('error', 'Could not fix automatically. Please check the data manually.');
-    }
+  const handleCopyPrompt = () => {
+    navigator.clipboard.writeText(promptText);
+    showToast('success', 'AI Prompt copied to clipboard! Paste in ChatGPT/Gemini.');
   };
 
-  const handleCopyPrompt = () => {
-    navigator.clipboard.writeText(promptText).then(() => {
-      showToast('success', 'Prompt copied! Paste it into Gemini or ChatGPT.');
-    }).catch(() => {
-      showToast('info', 'Failed to copy prompt.');
-    });
+  const handlePasteClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setReadymadeText(text);
+        showToast('success', 'Pasted content from clipboard!');
+      }
+    } catch (err) {
+      showToast('error', 'Clipboard access permission required.');
+    }
   };
 
   const handleFileUpload = (file: File | undefined) => {
@@ -148,28 +180,34 @@ STRICT JSON STRUCTURE TO FOLLOW:
   const handleStartExam = () => {
     if (!validation.isValid || !validation.parsed) return;
 
-    onStartExam({
-      quiz: validation.parsed,
-      config: {
-        durationMinutes: parseInt(duration) || 10,
-        marksPerQuestion: parseFloat(marks) || 1,
-        negativeMarking: parseFloat(negative) || 0
-      }
-    });
+    if (onRequestStartExam) {
+      onRequestStartExam(validation.parsed);
+    } else {
+      onStartExam({
+        quiz: validation.parsed,
+        config: {
+          durationMinutes: parseInt(duration) || 10,
+          marksPerQuestion: parseFloat(marks) || 1,
+          negativeMarking: parseFloat(negative) || 0
+        }
+      });
+    }
   };
 
   const handleSaveQuiz = async () => {
     if (!validation.isValid || !validation.parsed || !activeProfileId) return;
+
     setIsSaving(true);
     try {
-      // Check if a quiz with same title already saved for this profile
       const existing = await db.quizzes
-        .where('profileId').equals(activeProfileId)
-        .filter(q => q.quiz_title === validation.parsed!.quiz_title)
+        .where('profileId')
+        .equals(activeProfileId)
+        .filter((q) => q.quiz_title === validation.parsed!.quiz_title)
         .first();
 
       if (existing) {
-        showToast('warning', `"${validation.parsed.quiz_title}" is already saved in your library!`);
+        showToast('warning', `"${validation.parsed.quiz_title}" is already in your library!`);
+        setIsSaving(false);
         return;
       }
 
@@ -181,7 +219,6 @@ STRICT JSON STRUCTURE TO FOLLOW:
         questionCount: validation.parsed.questions.length,
       });
       showToast('success', `Quiz saved to your library! ✓`);
-      // Reset step 3 so they can create another
       setJsonText('');
     } catch (err: any) {
       showToast('error', 'Failed to save quiz. Please try again.');
@@ -190,71 +227,229 @@ STRICT JSON STRUCTURE TO FOLLOW:
     }
   };
 
+  // Selection Screen when creationMode is null (3 Mode Options)
+  if (creationMode === null) {
+    return (
+      <div className="flex-1 w-full pb-28 max-w-md mx-auto flex flex-col space-y-6 pt-2">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-headline text-2xl font-bold tracking-tight text-on-surface">
+              Create New Quiz ⚡
+            </h1>
+            <p className="text-xs text-outline mt-0.5 font-body">
+              Choose how you want to create your quiz session
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onSwitchTab?.('home')}
+            className="w-8 h-8 rounded-full bg-surface-container-low flex items-center justify-center text-outline hover:text-on-surface"
+          >
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        {/* 3 Mode Option Cards */}
+        <div className="space-y-3">
+          {/* Option 1: Topic & Subject */}
+          <div
+            onClick={() => {
+              setCreationMode('topic');
+              setStep(1);
+            }}
+            className="group rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 shadow-xs hover:border-primary hover:shadow-md transition-all cursor-pointer active:scale-[0.99] space-y-2.5"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                <span className="material-symbols-outlined text-[20px]">auto_awesome</span>
+              </div>
+              <span className="text-[10px] font-headline font-semibold text-primary uppercase tracking-wider">
+                Option 1
+              </span>
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-base text-on-surface">
+                Generate by Topic & Subject
+              </h3>
+              <p className="text-xs font-body text-outline mt-0.5 leading-relaxed">
+                Generate new questions based on subject, chapter, and topic.
+              </p>
+            </div>
+            <div className="flex items-center gap-1 text-xs font-headline font-semibold text-primary group-hover:translate-x-0.5 transition-transform">
+              <span>Select Mode</span>
+              <span className="material-symbols-outlined text-[15px]">chevron_right</span>
+            </div>
+          </div>
+
+          {/* Option 2: Readymade Text / Copied MCQs */}
+          <div
+            onClick={() => {
+              setCreationMode('readymade_text');
+              setStep(1);
+            }}
+            className="group rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 shadow-xs hover:border-tertiary hover:shadow-md transition-all cursor-pointer active:scale-[0.99] space-y-2.5"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-9 h-9 rounded-xl bg-tertiary/10 text-tertiary flex items-center justify-center">
+                <span className="material-symbols-outlined text-[20px]">description</span>
+              </div>
+              <span className="text-[10px] font-headline font-semibold text-tertiary uppercase tracking-wider">
+                Option 2
+              </span>
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-base text-on-surface">
+                Readymade Text / Copied MCQs
+              </h3>
+              <p className="text-xs font-body text-outline mt-0.5 leading-relaxed">
+                Paste copied text, questions, or notes to build AI prompt.
+              </p>
+            </div>
+            <div className="flex items-center gap-1 text-xs font-headline font-semibold text-tertiary group-hover:translate-x-0.5 transition-transform">
+              <span>Select Mode</span>
+              <span className="material-symbols-outlined text-[15px]">chevron_right</span>
+            </div>
+          </div>
+
+          {/* Option 3: Image / Photo of MCQs */}
+          <div
+            onClick={() => {
+              setCreationMode('readymade_image');
+              setStep(3); // Direct to Generate & Import!
+            }}
+            className="group rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 shadow-xs hover:border-secondary hover:shadow-md transition-all cursor-pointer active:scale-[0.99] space-y-2.5"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-9 h-9 rounded-xl bg-secondary-container/40 text-secondary flex items-center justify-center">
+                <span className="material-symbols-outlined text-[20px]">add_a_photo</span>
+              </div>
+              <span className="text-[10px] font-headline font-semibold text-secondary uppercase tracking-wider">
+                Option 3
+              </span>
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-base text-on-surface">
+                Image / Photo of MCQs 📷
+              </h3>
+              <p className="text-xs font-body text-outline mt-0.5 leading-relaxed">
+                Copy OCR prompt to use with photos of MCQs from books/notes.
+              </p>
+            </div>
+            <div className="flex items-center gap-1 text-xs font-headline font-semibold text-secondary group-hover:translate-x-0.5 transition-transform">
+              <span>Direct to AI Prompt</span>
+              <span className="material-symbols-outlined text-[15px]">chevron_right</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 w-full pb-28 max-w-md mx-auto flex flex-col space-y-5">
-      {/* Wizard Progress Bar */}
+      {/* Wizard Header Bar with Back button */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs font-headline">
-          <span className="font-semibold text-on-surface">Create Quiz</span>
-          <span className="text-outline">Step {step} of 3</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (step > 1) {
+                  if (creationMode === 'readymade_text' && step === 3) {
+                    setStep(1); // Go back to text input
+                  } else {
+                    setStep(prev => prev - 1);
+                  }
+                } else {
+                  setCreationMode(null);
+                }
+              }}
+              className="w-7 h-7 rounded-full bg-surface-container-low text-on-surface flex items-center justify-center hover:bg-surface-container transition-all cursor-pointer"
+              title="Back"
+            >
+              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+            </button>
+            <span className="font-semibold text-on-surface">
+              {creationMode === 'readymade_image'
+                ? 'Image MCQ OCR Prompt'
+                : creationMode === 'readymade_text'
+                ? 'Readymade Text Importer'
+                : 'Topic Quiz Generator'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-outline">
+              {creationMode === 'readymade_image' ? 'Step 1 of 1' : creationMode === 'readymade_text' ? 'Step 1 of 2' : `Step ${step} of 3`}
+            </span>
+          </div>
         </div>
+
         <div className="grid grid-cols-3 gap-1.5 w-full">
           <div className={`h-1.5 rounded-full transition-all ${step >= 1 ? 'bg-primary' : 'bg-surface-container-highest'}`}></div>
-          <div className={`h-1.5 rounded-full transition-all ${step >= 2 ? 'bg-primary' : 'bg-surface-container-highest'}`}></div>
+          <div className={`h-1.5 rounded-full transition-all ${creationMode !== 'topic' || step >= 2 ? 'bg-primary' : 'bg-surface-container-highest'}`}></div>
           <div className={`h-1.5 rounded-full transition-all ${step >= 3 ? 'bg-primary' : 'bg-surface-container-highest'}`}></div>
         </div>
       </div>
 
-      {/* Selected Context Chip */}
-      <div>
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-low border border-surface-container-high/80 text-xs text-on-surface-variant font-medium">
-          <span className="material-symbols-outlined text-[15px] text-primary">menu_book</span>
-          {subject || 'Physics'} • {chapter || 'General Chapter'}
-        </span>
-      </div>
-
-      {/* Step 1: Subject & Topic Details */}
-      {step === 1 && (
+      {/* Mode 1: TOPIC BASED STEP 1 */}
+      {creationMode === 'topic' && step === 1 && (
         <div className="space-y-4">
           <div>
             <h2 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
               Topic & Details
             </h2>
-            <p className="text-sm text-on-surface-variant mt-1 font-body">
-              Specify class, subject, and topic to generate questions
+            <p className="text-xs text-outline mt-0.5 font-body">
+              Set subject and topic details
             </p>
           </div>
 
           <div className="space-y-3.5 pt-2">
-            <div>
-              <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
-                Class / Level
-              </label>
-              <StitchSelect
-                value={grade}
-                onChange={(e) => setGrade(e.target.value)}
-                options={[
-                  'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5',
-                  'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10',
-                  'Class 11', 'Class 12',
-                  'Admission Test', 'Job / BCS', 'General Learning'
-                ]}
-                className="w-full h-11 px-4 text-sm"
-              />
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
                   Subject
                 </label>
-                <input
-                  type="text"
-                  placeholder="Physics"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  className="w-full h-11 px-4 rounded-xl bg-surface-container-lowest border border-outline-variant text-sm font-body text-on-surface focus:outline-none focus:border-primary"
-                />
+                {!isCustomSubject ? (
+                  <StitchSelect
+                    value={subject}
+                    onChange={(e) => {
+                      if (e.target.value === '✏️ + Custom Subject...') {
+                        setIsCustomSubject(true);
+                        setSubject('');
+                      } else {
+                        setSubject(e.target.value);
+                      }
+                    }}
+                    options={[
+                      ...availableSubjects,
+                      '✏️ + Custom Subject...'
+                    ]}
+                    className="w-full h-11 px-3 text-xs font-semibold"
+                  />
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Type custom subject..."
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      className="w-full h-11 pl-3 pr-14 rounded-xl bg-surface-container-lowest border border-outline-variant text-xs font-body text-on-surface focus:outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomSubject(false);
+                        setSubject(availableSubjects[0] || 'Physics');
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-headline font-semibold text-primary hover:underline px-1.5 py-1"
+                    >
+                      List
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -287,183 +482,130 @@ STRICT JSON STRUCTURE TO FOLLOW:
         </div>
       )}
 
-      {/* Step 2: Difficulty Selection & Quiz Settings */}
-      {step === 2 && (
+      {/* Mode 2: READYMADE TEXT MCQS STEP 1 */}
+      {creationMode === 'readymade_text' && step === 1 && (
         <div className="space-y-4">
           <div>
             <h2 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
-              Select Difficulty
+              Paste Readymade MCQs 📝
             </h2>
-            <p className="text-sm text-on-surface-variant mt-1 font-body">
-              Choose the challenge level for this quiz
+            <p className="text-xs text-outline mt-0.5 font-body">
+              Paste questions or notes to build an AI prompt
             </p>
           </div>
 
-          {/* Difficulty Interactive Cards */}
-          <div className="flex flex-col gap-3">
-            {/* Beginner */}
-            <div
-              onClick={() => setDifficulty('beginner')}
-              className={`group relative flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest cursor-pointer transition-all active:scale-[0.99] ${difficulty === 'beginner'
-                  ? 'border-2 border-primary shadow-sm'
-                  : 'border border-outline-variant/60 hover:border-outline'
-                }`}
-            >
-              <div className="flex items-center gap-3.5 pr-2">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${difficulty === 'beginner' ? 'bg-primary/10 text-primary' : 'bg-surface-container text-outline'
-                  }`}>
-                  <span className="material-symbols-outlined text-[20px]">eco</span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <h3 className={`font-headline font-semibold text-base ${difficulty === 'beginner' ? 'text-primary' : 'text-on-surface'}`}>
-                      Beginner
-                    </h3>
-                    <span className="text-xs text-outline font-normal">/ সহজ</span>
-                  </div>
-                  <p className="text-xs text-on-surface-variant mt-0.5 leading-snug">
-                    Core fundamentals & definitions
-                  </p>
-                </div>
-              </div>
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${difficulty === 'beginner' ? 'bg-primary text-on-primary shadow-xs' : 'border-2 border-outline-variant'
-                }`}>
-                {difficulty === 'beginner' && <span className="material-symbols-outlined text-[14px] font-bold">check</span>}
-              </div>
-            </div>
-
-            {/* Intermediate */}
-            <div
-              onClick={() => setDifficulty('intermediate')}
-              className={`group relative flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest cursor-pointer transition-all active:scale-[0.99] ${difficulty === 'intermediate'
-                  ? 'border-2 border-primary shadow-sm'
-                  : 'border border-outline-variant/60 hover:border-outline'
-                }`}
-            >
-              <div className="flex items-center gap-3.5 pr-2">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${difficulty === 'intermediate' ? 'bg-primary/10 text-primary' : 'bg-surface-container text-outline'
-                  }`}>
-                  <span className="material-symbols-outlined text-[20px]">trending_up</span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <h3 className={`font-headline font-semibold text-base ${difficulty === 'intermediate' ? 'text-primary' : 'text-on-surface'}`}>
-                      Intermediate
-                    </h3>
-                    <span className="text-xs text-primary/80 font-normal">/ মধ্যম</span>
-                  </div>
-                  <p className="text-xs text-on-surface-variant mt-0.5 leading-snug">
-                    Board exam & standard university entrance level
-                  </p>
-                </div>
-              </div>
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${difficulty === 'intermediate' ? 'bg-primary text-on-primary shadow-xs' : 'border-2 border-outline-variant'
-                }`}>
-                {difficulty === 'intermediate' && <span className="material-symbols-outlined text-[14px] font-bold">check</span>}
-              </div>
-            </div>
-
-            {/* Advanced */}
-            <div
-              onClick={() => setDifficulty('advanced')}
-              className={`group relative flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest cursor-pointer transition-all active:scale-[0.99] ${difficulty === 'advanced'
-                  ? 'border-2 border-primary shadow-sm'
-                  : 'border border-outline-variant/60 hover:border-outline'
-                }`}
-            >
-              <div className="flex items-center gap-3.5 pr-2">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${difficulty === 'advanced' ? 'bg-primary/10 text-primary' : 'bg-surface-container text-outline'
-                  }`}>
-                  <span className="material-symbols-outlined text-[20px]">bolt</span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <h3 className={`font-headline font-semibold text-base ${difficulty === 'advanced' ? 'text-primary' : 'text-on-surface'}`}>
-                      Advanced
-                    </h3>
-                    <span className="text-xs text-outline font-normal">/ কঠিন</span>
-                  </div>
-                  <p className="text-xs text-on-surface-variant mt-0.5 leading-snug">
-                    Olympiad & competitive engineering test questions
-                  </p>
-                </div>
-              </div>
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${difficulty === 'advanced' ? 'bg-primary text-on-primary shadow-xs' : 'border-2 border-outline-variant'
-                }`}>
-                {difficulty === 'advanced' && <span className="material-symbols-outlined text-[14px] font-bold">check</span>}
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Settings Grid */}
-          <div className="grid grid-cols-2 gap-3 pt-2">
+          <div className="space-y-3 pt-2">
             <div>
               <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
-                Questions Count
+                Quiz Title
               </label>
-              <StitchSelect
-                value={count}
-                onChange={(e) => setCount(e.target.value)}
-                options={[
-                  { value: '5', label: '5 Questions' },
-                  { value: '10', label: '10 Questions' },
-                  { value: '20', label: '20 Questions' },
-                  { value: '30', label: '30 Questions' }
-                ]}
-                className="w-full h-10 px-3 text-xs"
+              <input
+                type="text"
+                placeholder="e.g. Physics Chapter 3 Model Test"
+                value={readymadeTitle}
+                onChange={(e) => setReadymadeTitle(e.target.value)}
+                className="w-full h-11 px-4 rounded-xl bg-surface-container-lowest border border-outline-variant text-xs font-body text-on-surface focus:outline-none focus:border-primary"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-headline font-semibold text-on-surface mb-1">
-                Duration (Mins)
-              </label>
-              <StitchSelect
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-                options={[
-                  { value: '5', label: '5 Minutes' },
-                  { value: '10', label: '10 Minutes' },
-                  { value: '15', label: '15 Minutes' },
-                  { value: '20', label: '20 Minutes' }
-                ]}
-                className="w-full h-10 px-3 text-xs"
-              />
-            </div>
-          </div>
-
-          {/* Optional Review Toggle */}
-          <div className="w-full bg-surface-container-lowest border border-surface-container-high rounded-xl p-3.5 flex items-center justify-between shadow-xs">
-            <div className="flex items-center gap-3 pr-2">
-              <div className="w-8 h-8 rounded-lg bg-surface-container-low text-primary flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[18px]">replay</span>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-on-surface block cursor-pointer">
-                  Include previously missed questions
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-headline font-semibold text-on-surface">
+                  Paste MCQs / Notes Text
                 </label>
-                <p className="text-[11px] text-outline mt-0.5">Focus revision on your previous weak points</p>
+                <button
+                  type="button"
+                  onClick={handlePasteClipboard}
+                  className="text-xs text-primary font-headline font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[14px]">content_paste</span>
+                  Paste Clipboard
+                </button>
               </div>
+
+              <textarea
+                value={readymadeText}
+                onChange={(e) => setReadymadeText(e.target.value)}
+                placeholder="Paste your questions or raw notes text here..."
+                rows={7}
+                className="w-full p-3 font-body text-xs rounded-xl bg-surface-container-lowest border border-outline-variant focus:outline-none focus:border-primary resize-none"
+              />
             </div>
-            <input
-              type="checkbox"
-              checked={includeMissed}
-              onChange={(e) => setIncludeMissed(e.target.checked)}
-              className="accent-primary w-4 h-4 cursor-pointer"
-            />
           </div>
         </div>
       )}
 
-      {/* Step 3: AI Prompt & JSON Load */}
+      {/* Mode 1: TOPIC BASED STEP 2 */}
+      {creationMode === 'topic' && step === 2 && (
+        <div className="space-y-5">
+          <div>
+            <h2 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
+              Select Difficulty
+            </h2>
+          </div>
+
+          {/* Minimal 3-Column Difficulty Selector */}
+          <div className="grid grid-cols-3 gap-2.5">
+            {[
+              { id: 'beginner', label: 'Beginner', icon: 'eco' },
+              { id: 'intermediate', label: 'Intermediate', icon: 'trending_up' },
+              { id: 'advanced', label: 'Advanced', icon: 'bolt' },
+            ].map((item) => {
+              const isSelected = difficulty === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setDifficulty(item.id)}
+                  className={`py-4 px-2 rounded-2xl border flex flex-col items-center justify-center gap-2 transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-primary/10 border-primary text-primary font-bold shadow-xs'
+                      : 'bg-surface-container-lowest border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-2xl">{item.icon}</span>
+                  <span className="text-xs font-headline font-semibold">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Minimal Question Count Selector */}
+          <div className="space-y-2 pt-1">
+            <label className="block text-xs font-headline font-semibold text-on-surface">
+              Questions Count
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {['5', '10', '20', '30'].map((qCount) => (
+                <button
+                  key={qCount}
+                  type="button"
+                  onClick={() => setCount(qCount)}
+                  className={`h-11 rounded-xl font-headline text-xs font-semibold transition-all cursor-pointer ${
+                    count === qCount
+                      ? 'bg-primary text-on-primary shadow-xs'
+                      : 'bg-surface-container-lowest border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-low'
+                  }`}
+                >
+                  {qCount} Qs
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: AI Prompt & JSON Load (Shared for all 3 modes!) */}
       {step === 3 && (
         <div className="space-y-4">
           <div>
             <h2 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
-              Generate & Import
+              {creationMode === 'readymade_image' ? 'Image OCR Prompt' : 'Generate & Import'}
             </h2>
-            <p className="text-sm text-on-surface-variant mt-1 font-body">
-              Copy prompt for AI or paste your generated quiz JSON
+            <p className="text-xs text-outline mt-0.5 font-body">
+              {creationMode === 'readymade_image'
+                ? 'Copy prompt to use with ChatGPT / Gemini photo upload'
+                : 'Copy AI prompt or paste quiz JSON'}
             </p>
           </div>
 
@@ -490,9 +632,6 @@ STRICT JSON STRUCTURE TO FOLLOW:
           {!validation.isValid && jsonText && (
             <div className="p-3 rounded-xl bg-error-container text-on-error-container border border-error/20 flex items-center justify-between">
               <span className="text-xs font-headline font-semibold">Invalid JSON format. Please paste raw quiz JSON.</span>
-              <button onClick={handleFixJson} className="px-2.5 py-1 bg-error text-on-error text-[10px] font-headline font-bold rounded-lg cursor-pointer">
-                Fix Format
-              </button>
             </div>
           )}
 
@@ -500,10 +639,11 @@ STRICT JSON STRUCTURE TO FOLLOW:
           <textarea
             value={jsonText}
             onChange={(e) => setJsonText(e.target.value)}
-            placeholder="Paste quiz JSON string here..."
+            placeholder="Paste generated quiz JSON here..."
             rows={6}
-            className={`w-full p-3 font-mono text-xs rounded-xl bg-surface-container-lowest border-2 focus:outline-none transition-all resize-none ${validation.isValid ? 'border-tertiary focus:border-tertiary' : jsonText ? 'border-error focus:border-error' : 'border-outline-variant focus:border-primary'
-              }`}
+            className={`w-full p-3 font-mono text-xs rounded-xl bg-surface-container-lowest border-2 focus:outline-none transition-all resize-none ${
+              validation.isValid ? 'border-tertiary focus:border-tertiary' : jsonText ? 'border-error focus:border-error' : 'border-outline-variant focus:border-primary'
+            }`}
           />
         </div>
       )}
@@ -512,9 +652,20 @@ STRICT JSON STRUCTURE TO FOLLOW:
       <footer className="fixed bottom-0 left-0 w-full z-40 pb-safe bg-surface/95 backdrop-blur-lg border-t border-surface-container-high/70">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center gap-3">
           <button
-            disabled={step === 1}
-            onClick={() => setStep(prev => prev - 1)}
-            className="h-11 px-5 rounded-xl border border-surface-container-high bg-surface-container-lowest text-on-surface font-label text-sm font-medium flex items-center justify-center gap-1.5 hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 cursor-pointer"
+            onClick={() => {
+              if (step > 1) {
+                if (creationMode === 'readymade_image' && step === 3) {
+                  setCreationMode(null); // Go back to 3 mode selector
+                } else if (creationMode === 'readymade_text' && step === 3) {
+                  setStep(1); // Go back to text input
+                } else {
+                  setStep(prev => prev - 1);
+                }
+              } else {
+                setCreationMode(null);
+              }
+            }}
+            className="h-11 px-5 rounded-xl border border-surface-container-high bg-surface-container-lowest text-on-surface font-headline text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container shrink-0 cursor-pointer"
             type="button"
           >
             <span className="material-symbols-outlined text-[18px]">arrow_back</span>
@@ -523,11 +674,21 @@ STRICT JSON STRUCTURE TO FOLLOW:
 
           {step < 3 ? (
             <button
-              onClick={() => setStep(prev => prev + 1)}
-              className="flex-1 h-11 rounded-xl bg-primary text-on-primary font-label text-sm font-semibold flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary-container active:scale-[0.98] transition-all cursor-pointer"
+              onClick={() => {
+                if (creationMode === 'readymade_text') {
+                  if (!readymadeText.trim()) {
+                    showToast('warning', 'Please paste your MCQs or notes first.');
+                    return;
+                  }
+                  setStep(3); // Go straight to Generate & Import!
+                } else {
+                  setStep(prev => prev + 1);
+                }
+              }}
+              className="flex-1 h-11 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary/90 active:scale-[0.98] transition-all cursor-pointer"
               type="button"
             >
-              <span>Continue</span>
+              <span>{creationMode === 'readymade_text' ? 'Generate AI Prompt →' : 'Continue'}</span>
               <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
             </button>
           ) : (
@@ -535,7 +696,7 @@ STRICT JSON STRUCTURE TO FOLLOW:
               <button
                 onClick={handleSaveQuiz}
                 disabled={!validation.isValid || isSaving}
-                className="flex-1 h-11 rounded-xl bg-surface-container-low border border-surface-container-high text-on-surface font-label text-sm font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all cursor-pointer"
+                className="flex-1 h-11 rounded-xl bg-surface-container-low border border-surface-container-high text-on-surface font-headline text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all cursor-pointer"
                 type="button"
               >
                 <span className="material-symbols-outlined text-[18px] text-primary">{isSaving ? 'hourglass_empty' : 'bookmark_add'}</span>
@@ -544,7 +705,7 @@ STRICT JSON STRUCTURE TO FOLLOW:
               <button
                 onClick={handleStartExam}
                 disabled={!validation.isValid}
-                className="flex-1 h-11 rounded-xl bg-primary text-on-primary font-label text-sm font-semibold flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all cursor-pointer"
+                className="flex-1 h-11 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all cursor-pointer"
                 type="button"
               >
                 <span className="material-symbols-outlined text-[18px]">play_arrow</span>

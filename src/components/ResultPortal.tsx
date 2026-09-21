@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { ExamResult } from '../types';
+import { db, defaultSettings } from '../db/db';
+import { askAiForExplanation } from '../services/aiService';
 
 interface ResultPortalProps {
   resultRecord: ExamResult;
@@ -26,6 +29,15 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
   const [filterTab, setFilterTab] = useState('all');
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
+  // AI Doubt Modal state
+  const [aiTargetQuestion, setAiTargetQuestion] = useState<any>(null);
+  const [aiCustomQuery, setAiCustomQuery] = useState('');
+  const [aiResponse, setAiResponse] = useState<string | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const prefs = useLiveQuery(() => db.settings.get('user_prefs'), []) || defaultSettings;
+
   useEffect(() => {
     if (percentage >= 80) {
       confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
@@ -45,6 +57,34 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
     if (filterTab === 'skipped') return isUnattempted;
     return true;
   });
+
+  const handleAskAi = async (q: any, customPrompt?: string) => {
+    setAiTargetQuestion(q);
+    setAiResponse(null);
+    setAiError(null);
+    setIsAiLoading(true);
+
+    const qId = q.id || (quiz_data.questions.indexOf(q) + 1);
+    const userChoice = user_answers[qId];
+    const correctAnswerText = q.options[q.correct_answer] || '';
+    const userSelectedText = userChoice !== undefined ? q.options[userChoice] : undefined;
+
+    try {
+      const res = await askAiForExplanation({
+        questionText: q.question,
+        options: q.options,
+        correctAnswerText,
+        userAnswerText: userSelectedText,
+        userQuery: customPrompt || aiCustomQuery,
+        settings: prefs,
+      });
+      setAiResponse(res);
+    } catch (err: any) {
+      setAiError(err?.message || 'Failed to connect to AI API.');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
 
   const circleRadius = 50;
   const circumference = 2 * Math.PI * circleRadius;
@@ -134,22 +174,6 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
         </div>
       </div>
 
-      {/* Performance Insights */}
-      <div className="rounded-2xl bg-surface-container-low border border-surface-container/60 p-3.5 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-            <span className="material-symbols-outlined text-[18px]">trending_up</span>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-on-surface">Performance Insight</p>
-            <p className="text-[11px] text-on-surface-variant">
-              {accuracy >= 80 ? 'Mastery level performance in core topics' : 'Good foundation, review weak concepts below'}
-            </p>
-          </div>
-        </div>
-        <span className="text-xs font-semibold text-primary">{accuracy >= 80 ? 'Top 10%' : 'Active'}</span>
-      </div>
-
       {/* Action Buttons Row */}
       <div className="grid grid-cols-2 gap-2 pt-1">
         <button 
@@ -236,7 +260,7 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
 
                     {!isExpanded && (
                       <p className="text-xs text-primary font-headline font-medium mt-1 flex items-center gap-0.5">
-                        <span>Show Options & Explanation</span>
+                        <span>Show Options & AI Doubt Solver</span>
                         <span className="material-symbols-outlined text-[16px]">expand_more</span>
                       </p>
                     )}
@@ -278,13 +302,23 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
                       <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface space-y-1">
                         <div className="flex items-center gap-1.5 text-primary font-headline font-semibold">
                           <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-                          <span>AI Concept Rationale</span>
+                          <span>Explanation Rationale</span>
                         </div>
                         <p className="font-body text-on-surface-variant leading-relaxed">
                           {q.explanation}
                         </p>
                       </div>
                     )}
+
+                    {/* Ask AI Doubt Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleAskAi(q)}
+                      className="w-full h-10 rounded-xl bg-primary/10 border border-primary/30 text-primary font-headline text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary/20 transition-all cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+                      Ask AI to Explain / Clear Doubts
+                    </button>
                   </div>
                 )}
               </div>
@@ -292,6 +326,105 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
           })}
         </div>
       </div>
+
+      {/* AI Doubt Solver Drawer / Modal */}
+      {aiTargetQuestion && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-lg max-h-[85vh] rounded-3xl bg-surface-container-lowest border border-surface-container/80 p-5 shadow-2xl flex flex-col overflow-hidden space-y-4">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-surface-container">
+              <div>
+                <span className="text-[11px] font-headline font-semibold text-primary uppercase tracking-wider flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px]">smart_toy</span>
+                  AI Doubt Solver ({prefs.preferredAiProvider === 'openai' ? 'OpenAI ChatGPT' : 'Google Gemini'})
+                </span>
+                <h3 className="font-headline font-bold text-sm text-on-surface line-clamp-1 mt-0.5">
+                  {aiTargetQuestion.question}
+                </h3>
+              </div>
+              <button
+                onClick={() => setAiTargetQuestion(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:text-on-surface hover:bg-surface-container"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            {/* Quick Action Chips */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <button
+                type="button"
+                onClick={() => handleAskAi(aiTargetQuestion, 'Explain why the correct answer is right in detail.')}
+                className="px-3 py-1.5 rounded-xl bg-surface-container-low text-on-surface font-headline text-[11px] font-medium whitespace-nowrap hover:bg-surface-container transition-all cursor-pointer"
+              >
+                💡 Explain Correct Answer
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAskAi(aiTargetQuestion, 'Simplify the core concept for a beginner.')}
+                className="px-3 py-1.5 rounded-xl bg-surface-container-low text-on-surface font-headline text-[11px] font-medium whitespace-nowrap hover:bg-surface-container transition-all cursor-pointer"
+              >
+                🎯 Simplify Concept
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAskAi(aiTargetQuestion, 'Give me a similar practice problem with solution.')}
+                className="px-3 py-1.5 rounded-xl bg-surface-container-low text-on-surface font-headline text-[11px] font-medium whitespace-nowrap hover:bg-surface-container transition-all cursor-pointer"
+              >
+                📝 Practice Problem
+              </button>
+            </div>
+
+            {/* AI Answer Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 rounded-2xl bg-surface-container-low/60 border border-surface-container text-xs font-body text-on-surface leading-relaxed min-h-[160px] max-h-[300px]">
+              {isAiLoading ? (
+                <div className="flex flex-col items-center justify-center py-10 space-y-2">
+                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+                  <p className="text-xs font-headline font-semibold text-outline">
+                    Asking AI tutor for explanation...
+                  </p>
+                </div>
+              ) : aiError ? (
+                <div className="p-3 rounded-xl bg-error-container/40 border border-error/30 text-on-error-container space-y-2">
+                  <div className="flex items-center gap-1.5 font-headline font-bold text-xs">
+                    <span className="material-symbols-outlined text-[16px]">error</span>
+                    API Error
+                  </div>
+                  <p className="text-xs font-body">{aiError}</p>
+                </div>
+              ) : aiResponse ? (
+                <div className="whitespace-pre-wrap font-body text-xs leading-relaxed text-on-surface">
+                  {aiResponse}
+                </div>
+              ) : (
+                <p className="text-outline text-xs text-center py-8">
+                  Tap any chip above or type your question below to ask AI.
+                </p>
+              )}
+            </div>
+
+            {/* Custom Query Input */}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="text"
+                placeholder="Ask any specific question about this problem..."
+                value={aiCustomQuery}
+                onChange={(e) => setAiCustomQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAskAi(aiTargetQuestion)}
+                className="flex-1 h-10 px-3.5 rounded-xl bg-surface-container-low border border-outline-variant/40 text-xs font-body text-on-surface focus:outline-none focus:border-primary"
+              />
+              <button
+                type="button"
+                onClick={() => handleAskAi(aiTargetQuestion)}
+                disabled={isAiLoading}
+                className="h-10 px-4 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold flex items-center justify-center gap-1 shadow-xs hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">send</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

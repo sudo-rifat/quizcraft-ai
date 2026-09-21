@@ -46,6 +46,9 @@ export const defaultSettings: Settings = {
   autoSubmit: true,
   warnBeforeLeave: true,
   timerWarningSound: true,
+  geminiApiKey: '',
+  openaiApiKey: '',
+  preferredAiProvider: 'gemini',
 };
 
 export async function initSettings(): Promise<void> {

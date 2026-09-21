@@ -9,11 +9,13 @@ import ProfileManagementModal from './components/ProfileManagementModal';
 
 import Navigation from './components/Navigation';
 import HomeDashboard from './components/HomeDashboard';
+import MyLibrary from './components/MyLibrary';
 import QuizWizard from './components/QuizWizard';
 import ExamPortal from './components/ExamPortal';
 import ResultPortal from './components/ResultPortal';
 import ProgressDashboard from './components/ProgressDashboard';
 import Settings from './components/Settings';
+import ExamConfigModal from './components/ExamConfigModal';
 
 import { Quiz, ExamResult } from './types';
 
@@ -27,6 +29,7 @@ function AppContent() {
   const [currentTab, setCurrentTab] = useState('home');
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
   const [examConfig, setExamConfig] = useState<any>(null);
+  const [pendingConfigQuiz, setPendingConfigQuiz] = useState<Quiz | null>(null);
   const [activeResultRecord, setActiveResultRecord] = useState<ExamResult | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -45,15 +48,8 @@ function AppContent() {
   } = useActiveProfile();
 
   useEffect(() => {
-    const handleOnlineStatus = () => {
-      setIsOffline(false);
-      showToast('success', 'ইন্টারনেট ফিরে এসেছে. এখন আবার অনলাইন ডেটা sync করতে পারছেন।');
-    };
-
-    const handleOfflineStatus = () => {
-      setIsOffline(true);
-      showToast('warning', 'অফলাইন মোডে আছেন। অ্যাপটি লোকাল ডেটা দিয়ে কাজ করছে।');
-    };
+    const handleOnlineStatus = () => setIsOffline(false);
+    const handleOfflineStatus = () => setIsOffline(true);
 
     window.addEventListener('online', handleOnlineStatus);
     window.addEventListener('offline', handleOfflineStatus);
@@ -94,6 +90,10 @@ function AppContent() {
     setActiveQuiz(quiz);
     setExamConfig(config);
     setCurrentTab('exam');
+  };
+
+  const handleRequestStartExam = (quiz: Quiz) => {
+    setPendingConfigQuiz(quiz);
   };
 
   const handleSubmitExam = async ({ userAnswers, timeSpentSecs }: { userAnswers: Record<string, number>; timeSpentSecs: number }) => {
@@ -189,11 +189,6 @@ function AppContent() {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full pt-20 pb-24 px-4 max-w-md md:max-w-3xl mx-auto relative">
-        {isOffline && (
-          <div className="sticky top-16 z-40 border-b border-secondary/30 bg-secondary-container/90 px-4 py-2 text-center text-xs font-headline font-semibold text-on-secondary-container backdrop-blur-sm rounded-xl mb-4">
-            Offline Mode: Operating with local IndexedDB storage.
-          </div>
-        )}
         
         {/* Toast Notifications */}
         <div className="fixed top-20 right-4 z-50 flex flex-col gap-2 max-w-xs sm:max-w-sm pointer-events-none">
@@ -221,11 +216,26 @@ function AppContent() {
                 setCurrentTab('result');
               }}
               onStartExam={handleStartExam}
+              onRequestStartExam={handleRequestStartExam}
+            />
+          )}
+
+          {currentTab === 'library' && (
+            <MyLibrary
+              onSwitchTab={setCurrentTab}
+              onStartExam={handleStartExam}
+              onRequestStartExam={handleRequestStartExam}
+              showToast={showToast}
             />
           )}
 
           {currentTab === 'create' && (
-            <QuizWizard onStartExam={handleStartExam} showToast={showToast} />
+            <QuizWizard
+              onStartExam={handleStartExam}
+              onRequestStartExam={handleRequestStartExam}
+              onSwitchTab={setCurrentTab}
+              showToast={showToast}
+            />
           )}
 
           {currentTab === 'exam' && activeQuiz && (
@@ -283,6 +293,20 @@ function AppContent() {
         currentTab={currentTab}
         onRequestSwitchProfile={handleRequestSwitchProfile}
       />
+
+      {/* Exam Configuration Modal */}
+      {pendingConfigQuiz && (
+        <ExamConfigModal
+          quiz={pendingConfigQuiz}
+          isOpen={!!pendingConfigQuiz}
+          onClose={() => setPendingConfigQuiz(null)}
+          onConfirmStart={(config) => {
+            const quizToStart = pendingConfigQuiz;
+            setPendingConfigQuiz(null);
+            handleStartExam({ quiz: quizToStart, config });
+          }}
+        />
+      )}
 
       {/* Profile Management Modal */}
       <ProfileManagementModal

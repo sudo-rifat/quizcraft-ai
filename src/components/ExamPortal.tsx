@@ -15,16 +15,54 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
   });
   const [flagged, setFlagged] = useState<Record<string, boolean>>({});
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
 
-  const initialTimerSeconds = examConfig.durationMinutes * 60;
+  // Unlimited timer check (durationMinutes === 0)
+  const isUnlimitedTimer = examConfig.durationMinutes === 0;
+  const initialTimerSeconds = isUnlimitedTimer ? 0 : examConfig.durationMinutes * 60;
   const [timerSeconds, setTimerSeconds] = useState(() => {
+    if (isUnlimitedTimer) return 0;
     const saved = sessionStorage.getItem(`quiz_timer_${quizData.quiz_title}`);
     return saved ? parseInt(saved, 10) : initialTimerSeconds;
   });
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const touchStartXRef = useRef<number | null>(null);
+  const touchEndXRef = useRef<number | null>(null);
+
+  // Screen Wake Lock API (Keep Screen Awake during Exam)
+  useEffect(() => {
+    let wakeLockObj: any = null;
+
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockObj = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.warn('Screen Wake Lock request failed:', err);
+      }
+    };
+
+    requestWakeLock();
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        await requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLockObj) {
+        wakeLockObj.release().catch(() => {});
+      }
+    };
+  }, []);
 
   // Prevent accidental back/refresh
   useEffect(() => {
@@ -38,6 +76,8 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
 
   // Timer logic
   useEffect(() => {
+    if (isUnlimitedTimer) return; // Do not count down if unlimited
+
     timerRef.current = setInterval(() => {
       setTimerSeconds((prev) => {
         const next = prev - 1;
@@ -55,7 +95,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, []);
+  }, [isUnlimitedTimer]);
 
   // Auto-save answers
   useEffect(() => {
@@ -64,14 +104,21 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
 
   const totalQuestions = quizData.questions.length;
 
+  const navigateQuestion = (nextIndex: number, direction: 'left' | 'right') => {
+    if (nextIndex < 0 || nextIndex >= totalQuestions) return;
+    setSlideDirection(direction);
+    setCurrentQuestionIndex(nextIndex);
+    setTimeout(() => setSlideDirection(null), 300);
+  };
+
   // Keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (showConfirmModal) return;
     
     if (e.key === 'ArrowRight' && currentQuestionIndex < totalQuestions - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
+      navigateQuestion(currentQuestionIndex + 1, 'left');
     } else if (e.key === 'ArrowLeft' && currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(prev => prev - 1);
+      navigateQuestion(currentQuestionIndex - 1, 'right');
     } else if (['a', 'b', 'c', 'd', '1', '2', '3', '4'].includes(e.key.toLowerCase())) {
       const qId = quizData.questions[currentQuestionIndex].id || (currentQuestionIndex + 1);
       let optIdx = -1;
@@ -92,9 +139,37 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  // Touch Swipe Handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndXRef.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartXRef.current === null || touchEndXRef.current === null) return;
+    const diffX = touchStartXRef.current - touchEndXRef.current;
+    const minSwipeDistance = 50;
+
+    if (diffX > minSwipeDistance && currentQuestionIndex < totalQuestions - 1) {
+      // Swipe left -> Next Question
+      navigateQuestion(currentQuestionIndex + 1, 'left');
+    } else if (diffX < -minSwipeDistance && currentQuestionIndex > 0) {
+      // Swipe right -> Previous Question
+      navigateQuestion(currentQuestionIndex - 1, 'right');
+    }
+
+    touchStartXRef.current = null;
+    touchEndXRef.current = null;
+  };
+
   const mins = Math.floor(Math.max(0, timerSeconds) / 60);
   const secs = Math.max(0, timerSeconds) % 60;
-  const formattedTimer = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  const formattedTimer = isUnlimitedTimer
+    ? 'No Limit'
+    : `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
   const answeredCount = Object.keys(answers).length;
   const flaggedCount = Object.keys(flagged).filter(k => flagged[k]).length;
@@ -107,7 +182,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
     sessionStorage.removeItem(`quiz_answers_${quizData.quiz_title}`);
     sessionStorage.removeItem(`quiz_timer_${quizData.quiz_title}`);
 
-    const timeSpentSecs = initialTimerSeconds - timerSeconds;
+    const timeSpentSecs = isUnlimitedTimer ? 0 : (initialTimerSeconds - timerSeconds);
     onSubmitExam({ userAnswers: answers, timeSpentSecs });
   };
 
@@ -117,7 +192,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
   const isFlagged = !!flagged[qId];
 
   return (
-    <div className="flex-1 flex flex-col max-w-lg mx-auto w-full pt-16 pb-36 px-4">
+    <div className="flex-1 flex flex-col max-w-lg mx-auto w-full pt-16 pb-36 px-4 select-none">
       {/* Top App Bar Header for Exam */}
       <header className="fixed top-0 inset-x-0 z-40 bg-surface/95 backdrop-blur-md border-b border-surface-container-high/60 pt-safe">
         <div className="h-14 px-4 flex items-center justify-between max-w-lg mx-auto w-full">
@@ -139,7 +214,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
           </div>
 
           {/* Clean timer badge */}
-          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface border border-outline-variant/30 shrink-0 ${timerSeconds <= 60 ? 'timer-warning' : ''}`}>
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface border border-outline-variant/30 shrink-0 ${!isUnlimitedTimer && timerSeconds <= 60 ? 'timer-warning' : ''}`}>
             <span className="material-symbols-outlined text-[16px] text-primary">schedule</span>
             <span className="font-headline font-semibold text-[13px] tracking-tight">{formattedTimer}</span>
           </div>
@@ -151,57 +226,71 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
         </div>
       </header>
 
-      {/* Main Question Card */}
-      <section className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/30 shadow-[0_2px_12px_rgba(11,28,48,0.04)] mb-4 mt-2">
-        <div className="flex items-center justify-between mb-3">
-          <span className="font-headline font-bold text-xs uppercase tracking-wider text-primary bg-primary/10 px-2.5 py-1 rounded-md">
-            Question {String(currentQuestionIndex + 1).padStart(2, '0')} / {totalQuestions}
-          </span>
-          <span className="text-xs font-semibold text-outline tracking-tight">
-            Single Choice (+{examConfig.marksPerQuestion})
-          </span>
-        </div>
-        <h2 className="font-headline font-semibold text-[17px] leading-snug text-on-surface mb-2">
-          {currentQ.question}
-        </h2>
-      </section>
+      {/* Touch Swipeable Container with Slide Animations */}
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className={`transition-all duration-300 transform ${
+          slideDirection === 'left'
+            ? 'animate-slide-left'
+            : slideDirection === 'right'
+            ? 'animate-slide-right'
+            : ''
+        }`}
+      >
+        {/* Main Question Card (Removed "Single Choice" text) */}
+        <section className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/30 shadow-[0_2px_12px_rgba(11,28,48,0.04)] mb-4 mt-2">
+          <div className="flex items-center justify-between mb-3">
+            <span className="font-headline font-bold text-xs uppercase tracking-wider text-primary bg-primary/10 px-2.5 py-1 rounded-md">
+              Question {String(currentQuestionIndex + 1).padStart(2, '0')} / {totalQuestions}
+            </span>
+            <span className="text-xs font-semibold text-outline tracking-tight">
+              +{examConfig.marksPerQuestion} Mark{examConfig.marksPerQuestion > 1 ? 's' : ''}
+            </span>
+          </div>
+          <h2 className="font-headline font-semibold text-[17px] leading-snug text-on-surface mb-2">
+            {currentQ.question}
+          </h2>
+        </section>
 
-      {/* Options Group */}
-      <section className="flex flex-col gap-2.5">
-        {currentQ.options.map((optText, optIdx) => {
-          const isSelected = selectedOpt === optIdx;
-          const label = String.fromCharCode(65 + optIdx); // A, B, C, D
+        {/* Options Group */}
+        <section className="flex flex-col gap-2.5">
+          {currentQ.options.map((optText, optIdx) => {
+            const isSelected = selectedOpt === optIdx;
+            const label = String.fromCharCode(65 + optIdx); // A, B, C, D
 
-          return (
-            <div
-              key={optIdx}
-              onClick={() => setAnswers(prev => ({ ...prev, [qId]: optIdx }))}
-              className={`group flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all active:scale-[0.99] ${
-                isSelected
-                  ? 'selected-option bg-primary/5 border-2 border-primary shadow-[0_2px_10px_rgba(0,104,95,0.08)]'
-                  : 'bg-surface-container-lowest border border-outline-variant/40 shadow-xs hover:border-outline hover:bg-surface-container-low/40'
-              }`}
-            >
-              <div className="flex items-center gap-3.5 min-w-0 pr-2">
-                <span className={`w-8 h-8 rounded-full flex items-center justify-center font-headline font-semibold text-xs shrink-0 transition-colors ${
-                  isSelected ? 'bg-primary text-on-primary font-bold shadow-xs' : 'bg-surface-container text-on-surface-variant'
+            return (
+              <div
+                key={optIdx}
+                onClick={() => setAnswers(prev => ({ ...prev, [qId]: optIdx }))}
+                className={`group flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all active:scale-[0.99] ${
+                  isSelected
+                    ? 'selected-option bg-primary/5 border-2 border-primary shadow-[0_2px_10px_rgba(0,104,95,0.08)]'
+                    : 'bg-surface-container-lowest border border-outline-variant/40 shadow-xs hover:border-outline hover:bg-surface-container-low/40'
+                }`}
+              >
+                <div className="flex items-center gap-3.5 min-w-0 pr-2">
+                  <span className={`w-8 h-8 rounded-full flex items-center justify-center font-headline font-semibold text-xs shrink-0 transition-colors ${
+                    isSelected ? 'bg-primary text-on-primary font-bold shadow-xs' : 'bg-surface-container text-on-surface-variant'
+                  }`}>
+                    {label}
+                  </span>
+                  <span className={`font-body text-[15px] leading-tight ${isSelected ? 'font-semibold text-on-surface' : 'font-medium text-on-surface'}`}>
+                    {optText}
+                  </span>
+                </div>
+
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-all shrink-0 ${
+                  isSelected ? 'bg-primary border-0 text-on-primary' : 'border-2 border-outline-variant/60 text-transparent'
                 }`}>
-                  {label}
-                </span>
-                <span className={`font-body text-[15px] leading-tight ${isSelected ? 'font-semibold text-on-surface' : 'font-medium text-on-surface'}`}>
-                  {optText}
-                </span>
+                  <span className={`material-symbols-outlined text-[13px] ${isSelected ? 'opacity-100' : 'opacity-0'}`}>check</span>
+                </div>
               </div>
-
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-all shrink-0 ${
-                isSelected ? 'bg-primary border-0 text-on-primary' : 'border-2 border-outline-variant/60 text-transparent'
-              }`}>
-                <span className={`material-symbols-outlined text-[13px] ${isSelected ? 'opacity-100' : 'opacity-0'}`}>check</span>
-              </div>
-            </div>
-          );
-        })}
-      </section>
+            );
+          })}
+        </section>
+      </div>
 
       {/* Bottom Fixed Navigation Footer */}
       <footer className="fixed bottom-0 inset-x-0 z-40 bg-surface/95 backdrop-blur-md border-t border-surface-container-high/70 pb-safe pt-2.5 px-4 shadow-[0_-4px_16px_rgba(0,0,0,0.03)]">
@@ -243,7 +332,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
                 return (
                   <button 
                     key={idx} 
-                    onClick={() => { setCurrentQuestionIndex(idx); setShowPalette(false); }}
+                    onClick={() => { navigateQuestion(idx, idx > currentQuestionIndex ? 'left' : 'right'); setShowPalette(false); }}
                     className={btnStyle}
                   >
                     {String(idx + 1).padStart(2, '0')}
@@ -257,7 +346,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
           <div className="flex items-center gap-2.5 pb-1">
             <button 
               disabled={currentQuestionIndex === 0}
-              onClick={() => setCurrentQuestionIndex(prev => prev - 1)}
+              onClick={() => navigateQuestion(currentQuestionIndex - 1, 'right')}
               className="h-11 w-11 shrink-0 rounded-xl bg-surface-container-lowest border border-outline-variant/40 text-on-surface flex items-center justify-center active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-surface-container transition-all cursor-pointer"
               title="Previous Question"
             >
@@ -280,7 +369,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
 
             {currentQuestionIndex < totalQuestions - 1 ? (
               <button 
-                onClick={() => setCurrentQuestionIndex(prev => prev + 1)}
+                onClick={() => navigateQuestion(currentQuestionIndex + 1, 'left')}
                 className="h-11 px-4 flex-[1.4] rounded-xl bg-primary text-on-primary font-headline font-semibold text-[14px] flex items-center justify-center gap-1.5 shadow-xs active:scale-95 hover:bg-primary-container transition-all cursor-pointer"
               >
                 <span>Next Question</span>
