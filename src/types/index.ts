@@ -82,7 +82,9 @@ export interface Settings {
   timerWarningSound: boolean;
   geminiApiKey?: string;
   openaiApiKey?: string;
-  preferredAiProvider?: 'gemini' | 'openai';
+  openrouterApiKey?: string;
+  groqApiKey?: string;
+  preferredAiProvider?: 'gemini' | 'openai' | 'openrouter' | 'groq';
 }
 
 export interface Progress {

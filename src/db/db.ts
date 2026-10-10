@@ -59,6 +59,8 @@ export const defaultSettings: Settings = {
   timerWarningSound: true,
   geminiApiKey: '',
   openaiApiKey: '',
+  openrouterApiKey: '',
+  groqApiKey: '',
   preferredAiProvider: 'gemini',
 };
 

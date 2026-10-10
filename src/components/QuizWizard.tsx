@@ -5,6 +5,7 @@ import { Quiz, Settings } from '../types';
 import { db, defaultSettings } from '../db/db';
 import { useActiveProfile } from '../context/ProfileContext';
 import { generateQuizViaApi, hasApiKeyConfigured } from '../services/quizGenerationService';
+import { normalizeQuizJson } from '../utils/quizJson';
 
 interface QuizWizardProps {
   onStartExam: (data: { quiz: Quiz; config: any }) => void;
@@ -165,7 +166,7 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
     }
 
     try {
-      const cleaned = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const cleaned = normalizeQuizJson(jsonText);
       const parsed = JSON.parse(cleaned);
 
       if (parsed && parsed.quiz_title && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
@@ -452,9 +453,7 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
             <h2 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
               Topic & Details
             </h2>
-            <p className="text-xs text-outline mt-0.5 font-body">
-              Set subject and topic details
-            </p>
+
           </div>
 
           <div className="space-y-3.5 pt-2">

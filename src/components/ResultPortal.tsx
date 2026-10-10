@@ -11,6 +11,44 @@ interface ResultPortalProps {
   onGoHome: () => void;
 }
 
+interface AiResponseSection {
+  title: string;
+  lines: string[];
+}
+
+function cleanAiSectionTitle(title: string) {
+  return title.replace(/^#+\s*/, '').replace(/[*_`]/g, '').replace(/[✅❌🔍💡🌟🎯📝]/g, '').trim();
+}
+
+function parseAiResponse(response: string): AiResponseSection[] {
+  const sections: AiResponseSection[] = [];
+  let current: AiResponseSection = { title: 'Explanation', lines: [] };
+
+  response.split('\n').forEach((rawLine) => {
+    const line = rawLine.trim();
+    const headingMatch = line.match(/^#{1,4}\s+(.+)$/);
+
+    if (headingMatch) {
+      if (current.lines.length > 0) sections.push(current);
+      current = { title: cleanAiSectionTitle(headingMatch[1]), lines: [] };
+    } else if (line) {
+      current.lines.push(line);
+    }
+  });
+
+  if (current.lines.length > 0) sections.push(current);
+  return sections.length > 0 ? sections : [{ title: 'Explanation', lines: [response] }];
+}
+
+function renderAiLine(line: string) {
+  const pieces = line.split(/(\*\*[^*]+\*\*)/g);
+  return pieces.map((piece, index) =>
+    piece.startsWith('**') && piece.endsWith('**')
+      ? <strong key={index} className="font-headline font-semibold text-on-surface">{piece.slice(2, -2)}</strong>
+      : <React.Fragment key={index}>{piece}</React.Fragment>
+  );
+}
+
 export default function ResultPortal({ resultRecord, onRetake, onGoHome }: ResultPortalProps) {
   const { 
     quiz_title, 
@@ -243,7 +281,12 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
               <div>
                 <span className="text-[11px] font-headline font-semibold text-primary uppercase tracking-wider flex items-center gap-1">
                   <span className="material-symbols-outlined text-[16px]">smart_toy</span>
-                  AI Doubt Solver ({prefs.preferredAiProvider === 'openai' ? 'OpenAI ChatGPT' : 'Google Gemini'})
+                  AI Doubt Solver ({
+                    prefs.preferredAiProvider === 'openai' ? 'OpenAI ChatGPT'
+                    : prefs.preferredAiProvider === 'openrouter' ? 'OpenRouter'
+                    : prefs.preferredAiProvider === 'groq' ? 'Groq'
+                    : 'Google Gemini'
+                  })
                 </span>
                 <h3 className="font-headline font-bold text-sm text-on-surface line-clamp-1 mt-0.5">
                   {aiTargetQuestion.question}
@@ -300,8 +343,49 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
                   <p className="text-xs font-body">{aiError}</p>
                 </div>
               ) : aiResponse ? (
-                <div className="whitespace-pre-wrap font-body text-xs leading-relaxed text-on-surface">
-                  {aiResponse}
+                <div className="space-y-3">
+                  {parseAiResponse(aiResponse).map((section, sectionIndex) => {
+                    const title = section.title.toLowerCase();
+                    const isCorrectAnswer = title.includes('correct answer') || title.includes('সঠিক উত্তর');
+                    const isTakeaway = title.includes('key takeaway') || title.includes('মূল কথা') || title.includes('মনে রাখ');
+                    const isAlternatives = title.includes('other option') || title.includes('অন্যান্য') || title.includes('ভুল');
+
+                    return (
+                      <section
+                        key={`${section.title}-${sectionIndex}`}
+                        className={`rounded-xl border p-3 ${
+                          isCorrectAnswer
+                            ? 'bg-tertiary-container/20 border-tertiary/30'
+                            : isTakeaway
+                            ? 'bg-primary/10 border-primary/25'
+                            : 'bg-surface-container-lowest border-surface-container'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <span className={`material-symbols-outlined text-[16px] ${
+                            isCorrectAnswer ? 'text-tertiary' : isTakeaway ? 'text-primary' : 'text-outline'
+                          }`}>
+                            {isCorrectAnswer ? 'check_circle' : isTakeaway ? 'lightbulb' : isAlternatives ? 'rule' : 'menu_book'}
+                          </span>
+                          <h4 className="font-headline text-xs font-bold text-on-surface">{section.title}</h4>
+                        </div>
+                        <div className="space-y-1.5 font-body text-xs leading-relaxed text-on-surface-variant">
+                          {section.lines.map((line, lineIndex) => {
+                            const isBullet = /^[-•*]\s+/.test(line);
+                            const content = isBullet ? line.replace(/^[-•*]\s+/, '') : line;
+                            return isBullet ? (
+                              <div key={lineIndex} className="flex gap-2">
+                                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />
+                                <p>{renderAiLine(content)}</p>
+                              </div>
+                            ) : (
+                              <p key={lineIndex}>{renderAiLine(content)}</p>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-outline text-xs text-center py-8">

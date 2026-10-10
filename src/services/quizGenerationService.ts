@@ -1,4 +1,5 @@
 import { Settings, Quiz } from '../types';
+import { normalizeQuizJson } from '../utils/quizJson';
 
 export interface QuizGenerationResult {
   success: boolean;
@@ -20,6 +21,8 @@ export async function generateQuizViaApi(
   const provider = settings.preferredAiProvider || 'gemini';
   const geminiKey = settings.geminiApiKey?.trim();
   const openaiKey = settings.openaiApiKey?.trim();
+  const openrouterKey = settings.openrouterApiKey?.trim();
+  const groqKey = settings.groqApiKey?.trim();
 
   // Validate API key exists
   if (provider === 'gemini' && !geminiKey) {
@@ -28,14 +31,24 @@ export async function generateQuizViaApi(
   if (provider === 'openai' && !openaiKey) {
     return { success: false, error: 'OpenAI API Key not configured.', isRateLimit: false };
   }
+  if (provider === 'openrouter' && !openrouterKey) {
+    return { success: false, error: 'OpenRouter API Key not configured.', isRateLimit: false };
+  }
+  if (provider === 'groq' && !groqKey) {
+    return { success: false, error: 'Groq API Key not configured.', isRateLimit: false };
+  }
 
   try {
     let rawText: string;
 
     if (provider === 'gemini') {
       rawText = await callGemini(prompt, geminiKey!, imageBase64, imageMimeType);
-    } else {
+    } else if (provider === 'openai') {
       rawText = await callOpenAI(prompt, openaiKey!, imageBase64, imageMimeType);
+    } else if (provider === 'openrouter') {
+      rawText = await callOpenAI(prompt, openrouterKey!, imageBase64, imageMimeType, 'https://openrouter.ai/api/v1/chat/completions', 'openrouter/free');
+    } else {
+      rawText = await callOpenAI(prompt, groqKey!, imageBase64, imageMimeType, 'https://api.groq.com/openai/v1/chat/completions', 'llama-3.3-70b-versatile');
     }
 
     // Parse and validate JSON from response
@@ -68,6 +81,8 @@ export function hasApiKeyConfigured(settings: Settings): boolean {
   const provider = settings.preferredAiProvider || 'gemini';
   if (provider === 'gemini') return !!settings.geminiApiKey?.trim();
   if (provider === 'openai') return !!settings.openaiApiKey?.trim();
+  if (provider === 'openrouter') return !!settings.openrouterApiKey?.trim();
+  if (provider === 'groq') return !!settings.groqApiKey?.trim();
   return false;
 }
 
@@ -159,9 +174,9 @@ async function callOpenAI(
   apiKey: string,
   imageBase64?: string,
   imageMimeType?: string,
+  endpoint = 'https://api.openai.com/v1/chat/completions',
+  model = 'gpt-4o-mini',
 ): Promise<string> {
-  const url = 'https://api.openai.com/v1/chat/completions';
-
   // Build message content
   let userContent: any;
   if (imageBase64 && imageMimeType) {
@@ -178,14 +193,14 @@ async function callOpenAI(
     userContent = prompt;
   }
 
-  const response = await fetch(url, {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: imageBase64 ? 'gpt-4o-mini' : 'gpt-4o-mini',
+      model,
       messages: [
         {
           role: 'system',
@@ -214,10 +229,7 @@ async function callOpenAI(
 
 function parseQuizJson(rawText: string): Quiz | null {
   try {
-    let cleaned = rawText
-      .replace(/```json\s*/gi, '')
-      .replace(/```\s*/g, '')
-      .trim();
+    let cleaned = normalizeQuizJson(rawText);
 
     // Find JSON boundaries
     const firstBrace = cleaned.indexOf('{');

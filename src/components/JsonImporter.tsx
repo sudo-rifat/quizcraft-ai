@@ -3,6 +3,7 @@ import { FileCode, Lightbulb, Atom, BookOpen, Languages, Settings, Play, AlertTr
 import StitchSelect from './StitchSelect';
 import { SAMPLE_QUIZZES } from '../data/sampleQuizzes';
 import { Quiz } from '../types';
+import { normalizeQuizJson } from '../utils/quizJson';
 
 interface JsonImporterProps {
   onStartExam: (data: { quiz: Quiz; config: any }) => void;
@@ -36,7 +37,7 @@ export default function JsonImporter({ onStartExam, showToast }: JsonImporterPro
     }
 
     try {
-      let sanitizedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      let sanitizedText = normalizeQuizJson(text);
       
       // Temporarily mask double backslashes so we don't double-escape them
       sanitizedText = sanitizedText.replace(/\\\\/g, '@@DOUBLE_SLASH@@');

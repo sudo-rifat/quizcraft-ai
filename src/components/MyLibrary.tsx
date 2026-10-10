@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useActiveProfile } from '../context/ProfileContext';
 import { SavedQuiz, Quiz, BookmarkedQuestion } from '../types';
@@ -16,6 +16,8 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
   const [activeSubTab, setActiveSubTab] = useState<'quizzes' | 'reviewLater'>('quizzes');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewQuiz, setPreviewQuiz] = useState<SavedQuiz | null>(null);
+  const [quizToDelete, setQuizToDelete] = useState<SavedQuiz | null>(null);
+  const [bookmarkToDelete, setBookmarkToDelete] = useState<BookmarkedQuestion | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Live query for saved quizzes belonging to active profile
@@ -51,6 +53,7 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
     setDeletingId(id);
     try {
       await db.quizzes.delete(id);
+      setQuizToDelete(null);
       showToast?.('success', `"${title}" has been deleted from your library.`);
     } catch (err) {
       showToast?.('error', 'Failed to delete quiz.');
@@ -59,12 +62,28 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && deletingId === null) {
+        setQuizToDelete(null);
+        setBookmarkToDelete(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deletingId]);
+
   const handleDeleteBookmark = async (id: number) => {
+    setDeletingId(id);
     try {
       await db.bookmarks.delete(id);
+      setBookmarkToDelete(null);
       showToast?.('info', 'Question removed from Review Later.');
     } catch (err) {
       showToast?.('error', 'Failed to remove question.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -243,7 +262,7 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
                           <span className="material-symbols-outlined text-[18px]">visibility</span>
                         </button>
                         <button
-                          onClick={() => sq.id !== undefined && handleDelete(sq.id, sq.quiz_title)}
+                          onClick={() => setQuizToDelete(sq)}
                           disabled={deletingId === sq.id}
                           className="w-8 h-8 rounded-full flex items-center justify-center text-outline/70 hover:text-error hover:bg-error/10 transition-all cursor-pointer"
                           title="Delete Quiz"
@@ -339,7 +358,7 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
                     </div>
 
                     <button
-                      onClick={() => bm.id !== undefined && handleDeleteBookmark(bm.id)}
+                      onClick={() => setBookmarkToDelete(bm)}
                       className="w-7 h-7 rounded-full flex items-center justify-center text-outline/70 hover:text-error hover:bg-error/10 transition-all shrink-0 cursor-pointer"
                       title="Remove from Review Later"
                     >
@@ -388,6 +407,106 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
             </div>
           )}
         </section>
+      )}
+
+      {/* Saved Quiz Delete Confirmation */}
+      {quizToDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && deletingId === null) setQuizToDelete(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-quiz-title"
+            aria-describedby="delete-quiz-description"
+            className="w-full max-w-xs rounded-2xl bg-surface-container-lowest border border-error/30 p-5 space-y-4 shadow-2xl"
+          >
+            <div className="text-center space-y-2">
+              <div className="w-10 h-10 rounded-full bg-error/20 text-error flex items-center justify-center mx-auto">
+                <span className="material-symbols-outlined text-xl">delete_forever</span>
+              </div>
+              <h3 id="delete-quiz-title" className="font-headline font-semibold text-base text-on-surface">
+                Delete Quiz?
+              </h3>
+              <p id="delete-quiz-description" className="text-xs font-body text-outline leading-relaxed">
+                This will permanently delete <strong>{quizToDelete.quiz_title}</strong> from your library. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setQuizToDelete(null)}
+                disabled={deletingId !== null}
+                className="flex-1 h-10 rounded-xl bg-surface-container-low text-on-surface font-headline text-xs font-semibold hover:bg-surface-container transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => quizToDelete.id !== undefined && handleDelete(quizToDelete.id, quizToDelete.quiz_title)}
+                disabled={quizToDelete.id === undefined || deletingId !== null}
+                className="flex-1 h-10 rounded-xl bg-error text-on-error font-headline text-xs font-semibold shadow-xs hover:bg-error/90 transition-all cursor-pointer disabled:cursor-wait disabled:opacity-70"
+              >
+                {deletingId !== null ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Review Later Delete Confirmation */}
+      {bookmarkToDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && deletingId === null) setBookmarkToDelete(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-review-title"
+            aria-describedby="delete-review-description"
+            className="w-full max-w-xs rounded-2xl bg-surface-container-lowest border border-error/30 p-5 space-y-4 shadow-2xl"
+          >
+            <div className="text-center space-y-2">
+              <div className="w-10 h-10 rounded-full bg-error/20 text-error flex items-center justify-center mx-auto">
+                <span className="material-symbols-outlined text-xl">delete_forever</span>
+              </div>
+              <h3 id="delete-review-title" className="font-headline font-semibold text-base text-on-surface">
+                Remove Question?
+              </h3>
+              <p id="delete-review-description" className="text-xs font-body text-outline leading-relaxed">
+                This question will be permanently removed from Review Later. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setBookmarkToDelete(null)}
+                disabled={deletingId !== null}
+                className="flex-1 h-10 rounded-xl bg-surface-container-low text-on-surface font-headline text-xs font-semibold hover:bg-surface-container transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => bookmarkToDelete.id !== undefined && handleDeleteBookmark(bookmarkToDelete.id)}
+                disabled={bookmarkToDelete.id === undefined || deletingId !== null}
+                className="flex-1 h-10 rounded-xl bg-error text-on-error font-headline text-xs font-semibold shadow-xs hover:bg-error/90 transition-all cursor-pointer disabled:cursor-wait disabled:opacity-70"
+              >
+                {deletingId !== null ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {/* Preview Quiz Modal */}
