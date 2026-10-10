@@ -29,6 +29,17 @@ export interface Quiz {
   questions: Question[];
 }
 
+export interface BookmarkedQuestion {
+  id?: number;
+  profileId: string;
+  quiz_title: string;
+  question_text: string;
+  options: string[];
+  correct_answer: number;
+  explanation?: string;
+  savedAt: string;
+}
+
 export interface SavedQuiz {
   id?: number;
   profileId: string;

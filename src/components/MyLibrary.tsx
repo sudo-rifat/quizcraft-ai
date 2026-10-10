@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useActiveProfile } from '../context/ProfileContext';
-import { SavedQuiz, Quiz } from '../types';
+import { SavedQuiz, Quiz, BookmarkedQuestion } from '../types';
 import { db } from '../db/db';
 
 interface MyLibraryProps {
@@ -13,6 +13,7 @@ interface MyLibraryProps {
 
 export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam, showToast }: MyLibraryProps) {
   const { activeProfileId } = useActiveProfile();
+  const [activeSubTab, setActiveSubTab] = useState<'quizzes' | 'reviewLater'>('quizzes');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewQuiz, setPreviewQuiz] = useState<SavedQuiz | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -27,8 +28,23 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
     return list.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
   }, [activeProfileId]) as SavedQuiz[] | undefined;
 
+  // Live query for bookmarked / Review Later MCQs belonging to active profile
+  const bookmarkedQuestions = useLiveQuery(async () => {
+    if (!activeProfileId) return [];
+    const list = await db.bookmarks
+      .where('profileId')
+      .equals(activeProfileId)
+      .toArray();
+    return list.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
+  }, [activeProfileId]) as BookmarkedQuestion[] | undefined;
+
   const filteredQuizzes = (savedQuizzes || []).filter((q) =>
     q.quiz_title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredBookmarks = (bookmarkedQuestions || []).filter((bm) =>
+    bm.question_text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    bm.quiz_title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleDelete = async (id: number, title: string) => {
@@ -43,6 +59,15 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
     }
   };
 
+  const handleDeleteBookmark = async (id: number) => {
+    try {
+      await db.bookmarks.delete(id);
+      showToast?.('info', 'Question removed from Review Later.');
+    } catch (err) {
+      showToast?.('error', 'Failed to remove question.');
+    }
+  };
+
   const handleStartExam = (sq: SavedQuiz) => {
     if (onRequestStartExam) {
       onRequestStartExam(sq.quiz_data);
@@ -50,6 +75,34 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
       onStartExam({
         quiz: sq.quiz_data,
         config: { durationMinutes: 10, marksPerQuestion: 1, negativeMarking: 0 },
+      });
+    }
+  };
+
+  const handlePracticeBookmarks = () => {
+    if (!bookmarkedQuestions || bookmarkedQuestions.length === 0) return;
+
+    const practiceQuiz: Quiz = {
+      quiz_title: 'Review Later Practice Exam',
+      questions: bookmarkedQuestions.map((bm, i) => ({
+        id: bm.id || i + 1,
+        question: bm.question_text,
+        options: bm.options,
+        correct_answer: bm.correct_answer,
+        explanation: bm.explanation || '',
+      })),
+    };
+
+    if (onRequestStartExam) {
+      onRequestStartExam(practiceQuiz);
+    } else {
+      onStartExam({
+        quiz: practiceQuiz,
+        config: {
+          durationMinutes: Math.max(5, Math.ceil(bookmarkedQuestions.length * 1.5)),
+          marksPerQuestion: 1,
+          negativeMarking: 0,
+        },
       });
     }
   };
@@ -65,9 +118,6 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
             <h1 className="font-headline text-2xl font-bold tracking-tight text-on-surface">
               My Library 📚
             </h1>
-            <p className="text-xs text-outline mt-0.5 font-body">
-              Saved quiz collection
-            </p>
           </div>
           <button
             onClick={() => onSwitchTab('create')}
@@ -79,160 +129,266 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
         </div>
       </section>
 
-      {/* Library Overview Chips */}
-      <section className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-            <span className="material-symbols-outlined text-[22px]">folder_open</span>
-          </div>
-          <div>
-            <span className="text-xs text-outline font-body block">Saved Quizzes</span>
-            <span className="font-headline text-lg font-bold text-on-surface">
-              {savedQuizzes?.length || 0}
-            </span>
-          </div>
-        </div>
 
-        <div className="rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-tertiary/10 text-tertiary flex items-center justify-center">
-            <span className="material-symbols-outlined text-[22px]">quiz</span>
-          </div>
-          <div>
-            <span className="text-xs text-outline font-body block">Total MCQs</span>
-            <span className="font-headline text-lg font-bold text-on-surface">
-              {totalQuestions}
-            </span>
-          </div>
-        </div>
+
+      {/* Subtab Navigation Pills */}
+      <section className="flex items-center gap-2 p-1 rounded-2xl bg-surface-container-low border border-surface-container-high/60">
+        <button
+          onClick={() => setActiveSubTab('quizzes')}
+          className={`flex-1 py-2 rounded-xl font-headline font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            activeSubTab === 'quizzes'
+              ? 'bg-surface-container-lowest text-on-surface shadow-xs'
+              : 'text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[16px]">folder_open</span>
+          <span>Saved Quizzes ({savedQuizzes?.length || 0})</span>
+        </button>
+        <button
+          onClick={() => setActiveSubTab('reviewLater')}
+          className={`flex-1 py-2 rounded-xl font-headline font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            activeSubTab === 'reviewLater'
+              ? 'bg-surface-container-lowest text-amber-600 dark:text-amber-400 shadow-xs'
+              : 'text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[16px]">bookmark</span>
+          <span>Review Later ({bookmarkedQuestions?.length || 0})</span>
+        </button>
       </section>
 
       {/* Search Input */}
-      {savedQuizzes && savedQuizzes.length > 0 && (
-        <section className="relative">
-          <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-outline text-[18px]">
-            search
-          </span>
-          <input
-            type="text"
-            placeholder="Search saved quizzes by title..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-11 pl-10 pr-4 rounded-xl bg-surface-container-lowest border border-surface-container-high font-body text-xs text-on-surface placeholder:text-outline/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface"
-            >
-              <span className="material-symbols-outlined text-[16px]">cancel</span>
-            </button>
+      <section className="relative">
+        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-outline text-[18px]">
+          search
+        </span>
+        <input
+          type="text"
+          placeholder={activeSubTab === 'quizzes' ? "Search saved quizzes by title..." : "Search review later MCQs..."}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full h-11 pl-10 pr-4 rounded-xl bg-surface-container-lowest border border-surface-container-high font-body text-xs text-on-surface placeholder:text-outline/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface"
+          >
+            <span className="material-symbols-outlined text-[16px]">cancel</span>
+          </button>
+        )}
+      </section>
+
+      {/* TAB 1: SAVED QUIZZES LIST */}
+      {activeSubTab === 'quizzes' && (
+        <section className="space-y-3">
+          {savedQuizzes === undefined ? (
+            <div className="flex justify-center py-12">
+              <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : filteredQuizzes.length === 0 ? (
+            <div className="rounded-2xl border-2 border-dashed border-surface-container-high p-8 flex flex-col items-center text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-surface-container-high/50 flex items-center justify-center text-outline">
+                <span className="material-symbols-outlined text-3xl">local_library</span>
+              </div>
+              <div>
+                <h3 className="font-headline font-semibold text-sm text-on-surface">
+                  {searchQuery ? 'No matching quizzes found' : 'Your library is empty'}
+                </h3>
+                <p className="text-xs font-body text-outline mt-1 max-w-xs">
+                  {searchQuery
+                    ? 'Try searching with a different keyword.'
+                    : 'Create or import a quiz, then tap "Save Quiz" to keep it in your library.'}
+                </p>
+              </div>
+              {!searchQuery && (
+                <button
+                  onClick={() => onSwitchTab('create')}
+                  className="px-4 py-2 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold shadow-xs hover:bg-primary/90 transition-all cursor-pointer"
+                >
+                  Create First Quiz
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredQuizzes.map((sq) => {
+                const formattedDate = new Date(sq.savedAt).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                });
+
+                return (
+                  <div
+                    key={sq.id}
+                    className="group rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:border-surface-container-high transition-all"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2.5">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-headline font-semibold text-base text-on-surface tracking-tight">
+                          {sq.quiz_title}
+                        </h3>
+                        <p className="text-xs text-outline font-body mt-0.5">
+                          Saved on {formattedDate}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => setPreviewQuiz(sq)}
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:text-primary hover:bg-primary/10 transition-all cursor-pointer"
+                          title="Preview Questions"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">visibility</span>
+                        </button>
+                        <button
+                          onClick={() => sq.id !== undefined && handleDelete(sq.id, sq.quiz_title)}
+                          disabled={deletingId === sq.id}
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-outline/70 hover:text-error hover:bg-error/10 transition-all cursor-pointer"
+                          title="Delete Quiz"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">
+                            {deletingId === sq.id ? 'hourglass_empty' : 'delete_outline'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-headline font-medium">
+                        <span className="material-symbols-outlined text-[14px]">quiz</span>
+                        {sq.questionCount} Questions
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleStartExam(sq)}
+                        className="flex-1 h-9 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs hover:bg-primary/90 active:scale-[0.98] transition-all cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                        Start Exam
+                      </button>
+                      <button
+                        onClick={() => setPreviewQuiz(sq)}
+                        className="px-3 h-9 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-headline text-xs font-medium transition-all cursor-pointer"
+                      >
+                        Preview
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </section>
       )}
 
-      {/* Saved Quizzes List */}
-      <section className="space-y-3">
-        {savedQuizzes === undefined ? (
-          <div className="flex justify-center py-12">
-            <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : filteredQuizzes.length === 0 ? (
-          <div className="rounded-2xl border-2 border-dashed border-surface-container-high p-8 flex flex-col items-center text-center space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-surface-container-high/50 flex items-center justify-center text-outline">
-              <span className="material-symbols-outlined text-3xl">local_library</span>
-            </div>
-            <div>
-              <h3 className="font-headline font-semibold text-sm text-on-surface">
-                {searchQuery ? 'No matching quizzes found' : 'Your library is empty'}
-              </h3>
-              <p className="text-xs font-body text-outline mt-1 max-w-xs">
-                {searchQuery
-                  ? 'Try searching with a different keyword.'
-                  : 'Create or import a quiz, then tap "Save Quiz" to keep it in your library.'}
-              </p>
-            </div>
-            {!searchQuery && (
+      {/* TAB 2: REVIEW LATER (BOOKMARKED MCQs) */}
+      {activeSubTab === 'reviewLater' && (
+        <section className="space-y-4">
+          {bookmarkedQuestions && bookmarkedQuestions.length > 0 && (
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 shadow-2xs">
+              <div className="flex items-center gap-2 text-xs font-headline font-semibold">
+                <span className="material-symbols-outlined text-[18px]">bookmark</span>
+                <span>{bookmarkedQuestions.length} Saved Review Questions</span>
+              </div>
               <button
-                onClick={() => onSwitchTab('create')}
-                className="px-4 py-2 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold shadow-xs hover:bg-primary/90 transition-all cursor-pointer"
+                onClick={handlePracticeBookmarks}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-500 text-white font-headline text-xs font-semibold flex items-center gap-1 shadow-xs hover:bg-amber-600 active:scale-95 transition-all cursor-pointer"
               >
-                Create First Quiz
+                <span className="material-symbols-outlined text-[15px]">play_arrow</span>
+                Practice All
               </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredQuizzes.map((sq) => {
-              const formattedDate = new Date(sq.savedAt).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-              });
+            </div>
+          )}
 
-              return (
+          {bookmarkedQuestions === undefined ? (
+            <div className="flex justify-center py-12">
+              <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : filteredBookmarks.length === 0 ? (
+            <div className="rounded-2xl border-2 border-dashed border-surface-container-high p-8 flex flex-col items-center text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                <span className="material-symbols-outlined text-3xl">bookmark_border</span>
+              </div>
+              <div>
+                <h3 className="font-headline font-semibold text-sm text-on-surface">
+                  {searchQuery ? 'No matching review questions found' : 'No Review Later questions'}
+                </h3>
+                <p className="text-xs font-body text-outline mt-1 max-w-xs">
+                  {searchQuery
+                    ? 'Try searching with a different keyword.'
+                    : 'During an exam, tap "Review Later" under any question to save it here for revision.'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredBookmarks.map((bm) => (
                 <div
-                  key={sq.id}
-                  className="group rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:border-surface-container-high transition-all"
+                  key={bm.id}
+                  className="rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 space-y-3 shadow-[0_1px_3px_rgba(0,0,0,0.03)]"
                 >
-                  <div className="flex items-start justify-between gap-3 mb-2.5">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-headline font-semibold text-base text-on-surface tracking-tight">
-                        {sq.quiz_title}
-                      </h3>
-                      <p className="text-xs text-outline font-body mt-0.5">
-                        Saved on {formattedDate}
-                      </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-headline text-[11px] font-semibold">
+                        {bm.quiz_title}
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => setPreviewQuiz(sq)}
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:text-primary hover:bg-primary/10 transition-all cursor-pointer"
-                        title="Preview Questions"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">visibility</span>
-                      </button>
-                      <button
-                        onClick={() => sq.id !== undefined && handleDelete(sq.id, sq.quiz_title)}
-                        disabled={deletingId === sq.id}
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-outline/70 hover:text-error hover:bg-error/10 transition-all cursor-pointer"
-                        title="Delete Quiz"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">
-                          {deletingId === sq.id ? 'hourglass_empty' : 'delete_outline'}
-                        </span>
-                      </button>
+                    <button
+                      onClick={() => bm.id !== undefined && handleDeleteBookmark(bm.id)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-outline/70 hover:text-error hover:bg-error/10 transition-all shrink-0 cursor-pointer"
+                      title="Remove from Review Later"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">close</span>
+                    </button>
+                  </div>
+
+                  <h4 className="font-headline font-semibold text-sm text-on-surface leading-snug">
+                    {bm.question_text}
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                    {bm.options.map((opt, optIdx) => {
+                      const isCorrect = optIdx === bm.correct_answer;
+                      return (
+                        <div
+                          key={optIdx}
+                          className={`p-2 rounded-xl text-xs font-body border flex items-center justify-between ${
+                            isCorrect
+                              ? 'bg-tertiary-container/40 border-tertiary/40 text-on-tertiary-container font-semibold'
+                              : 'bg-surface-container-lowest border-surface-container/60 text-outline'
+                          }`}
+                        >
+                          <span>
+                            <span className="mr-1.5 opacity-70">
+                              {String.fromCharCode(65 + optIdx)}.
+                            </span>
+                            {opt}
+                          </span>
+                          {isCorrect && (
+                            <span className="material-symbols-outlined text-[14px] text-tertiary">check_circle</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {bm.explanation && (
+                    <div className="p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high/60 text-[11px] font-body text-on-surface-variant leading-relaxed">
+                      <strong className="text-on-surface">Explanation: </strong>
+                      {bm.explanation}
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-headline font-medium">
-                      <span className="material-symbols-outlined text-[14px]">quiz</span>
-                      {sq.questionCount} Questions
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleStartExam(sq)}
-                      className="flex-1 h-9 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs hover:bg-primary/90 active:scale-[0.98] transition-all cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                      Start Exam
-                    </button>
-                    <button
-                      onClick={() => setPreviewQuiz(sq)}
-                      className="px-3 h-9 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-headline text-xs font-medium transition-all cursor-pointer"
-                    >
-                      Preview
-                    </button>
-                  </div>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Preview Quiz Modal */}
       {previewQuiz && (

@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { Profile, SavedQuiz, ExamResult, Settings, Progress } from '../types';
+import { Profile, SavedQuiz, ExamResult, Settings, Progress, BookmarkedQuestion } from '../types';
 
 export class QuizCraftDatabase extends Dexie {
   profiles!: Table<Profile, string>;
@@ -7,6 +7,7 @@ export class QuizCraftDatabase extends Dexie {
   examResults!: Table<ExamResult, string>;
   settings!: Table<Settings, string>;
   progress!: Table<Progress, number>;
+  bookmarks!: Table<BookmarkedQuestion, number>;
 
   constructor() {
     super('QuizCraftDB');
@@ -33,6 +34,16 @@ export class QuizCraftDatabase extends Dexie {
       examResults: 'id, profileId, quiz_title, timestamp, score, accuracy',
       settings: 'id',
       progress: '++id, profileId, topic, correct, attempted, accuracy'
+    });
+
+    // Version 4: bookmarks table for Review Later MCQs
+    this.version(4).stores({
+      profiles: 'id, name, createdAt',
+      quizzes: '++id, profileId, quiz_title, savedAt',
+      examResults: 'id, profileId, quiz_title, timestamp, score, accuracy',
+      settings: 'id',
+      progress: '++id, profileId, topic, correct, attempted, accuracy',
+      bookmarks: '++id, profileId, quiz_title, savedAt'
     });
   }
 }

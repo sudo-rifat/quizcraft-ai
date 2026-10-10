@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Quiz } from '../types';
+import { db } from '../db/db';
+import { useActiveProfile } from '../context/ProfileContext';
 
 interface ExamPortalProps {
   quizData: Quiz;
@@ -9,12 +11,33 @@ interface ExamPortalProps {
 }
 
 export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToast }: ExamPortalProps) {
+  const { activeProfileId } = useActiveProfile();
   const [answers, setAnswers] = useState<Record<string, number>>(() => {
     const saved = sessionStorage.getItem(`quiz_answers_${quizData.quiz_title}`);
     return saved ? JSON.parse(saved) : {};
   });
   const [flagged, setFlagged] = useState<Record<string, boolean>>({});
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+
+  // Load initial bookmarks from database
+  useEffect(() => {
+    if (!activeProfileId) return;
+    db.bookmarks
+      .where('profileId')
+      .equals(activeProfileId)
+      .filter(b => b.quiz_title === quizData.quiz_title)
+      .toArray()
+      .then(bookmarks => {
+        const flagMap: Record<string, boolean> = {};
+        quizData.questions.forEach((q, idx) => {
+          const qId = q.id || (idx + 1);
+          const isBookmarked = bookmarks.some(b => b.question_text === q.question);
+          if (isBookmarked) flagMap[qId] = true;
+        });
+        setFlagged(prev => ({ ...prev, ...flagMap }));
+      })
+      .catch(err => console.error('Failed to load initial bookmarks:', err));
+  }, [activeProfileId, quizData]);
   const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
@@ -191,6 +214,49 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
   const selectedOpt = answers[qId];
   const isFlagged = !!flagged[qId];
 
+  const handleToggleFlag = async () => {
+    const nextFlagged = !isFlagged;
+    setFlagged(prev => ({ ...prev, [qId]: nextFlagged }));
+
+    if (!activeProfileId) return;
+
+    try {
+      if (nextFlagged) {
+        const existing = await db.bookmarks
+          .where('profileId')
+          .equals(activeProfileId)
+          .filter(b => b.quiz_title === quizData.quiz_title && b.question_text === currentQ.question)
+          .first();
+
+        if (!existing) {
+          await db.bookmarks.add({
+            profileId: activeProfileId,
+            quiz_title: quizData.quiz_title,
+            question_text: currentQ.question,
+            options: currentQ.options,
+            correct_answer: currentQ.correct_answer,
+            explanation: currentQ.explanation || '',
+            savedAt: new Date().toISOString(),
+          });
+          showToast('success', 'Saved to Review Later in Library! 🔖');
+        }
+      } else {
+        const existing = await db.bookmarks
+          .where('profileId')
+          .equals(activeProfileId)
+          .filter(b => b.quiz_title === quizData.quiz_title && b.question_text === currentQ.question)
+          .first();
+
+        if (existing && existing.id) {
+          await db.bookmarks.delete(existing.id);
+          showToast('info', 'Removed from Review Later');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to toggle bookmark in DB:', err);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col max-w-lg mx-auto w-full pt-16 pb-36 px-4 select-none">
       {/* Top App Bar Header for Exam */}
@@ -290,6 +356,23 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
             );
           })}
         </section>
+
+        {/* Review Later Button below Options */}
+        <div className="pt-3 pb-24 flex justify-end">
+          <button 
+            onClick={handleToggleFlag}
+            className={`h-10 px-3.5 rounded-xl font-headline font-semibold text-[13px] flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
+              isFlagged 
+                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 shadow-2xs' 
+                : 'bg-surface-container-lowest border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-low'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {isFlagged ? 'bookmark' : 'bookmark_border'}
+            </span>
+            <span>{isFlagged ? 'Flagged for Review' : 'Review Later'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Bottom Fixed Navigation Footer */}
@@ -343,44 +426,31 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
           )}
 
           {/* Actions Bar */}
-          <div className="flex items-center gap-2.5 pb-1">
+          <div className="flex items-center gap-3 pb-1">
             <button 
               disabled={currentQuestionIndex === 0}
               onClick={() => navigateQuestion(currentQuestionIndex - 1, 'right')}
-              className="h-11 w-11 shrink-0 rounded-xl bg-surface-container-lowest border border-outline-variant/40 text-on-surface flex items-center justify-center active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-surface-container transition-all cursor-pointer"
+              className="h-11 px-4 flex-1 rounded-xl bg-surface-container-high border border-outline-variant/40 text-on-surface font-headline font-semibold text-[14px] flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-surface-container-highest transition-all cursor-pointer"
               title="Previous Question"
             >
-              <span className="material-symbols-outlined text-[19px]">arrow_back</span>
-            </button>
-
-            <button 
-              onClick={() => setFlagged(prev => ({ ...prev, [qId]: !prev[qId] }))}
-              className={`h-11 px-3.5 flex-1 rounded-xl font-headline font-semibold text-[13px] flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
-                isFlagged 
-                  ? 'bg-secondary-container text-on-secondary-container border border-transparent' 
-                  : 'bg-surface-container-lowest border border-outline-variant/40 text-secondary hover:bg-surface-container-low'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                {isFlagged ? 'bookmark' : 'bookmark_border'}
-              </span>
-              <span>{isFlagged ? 'Flagged' : 'Review Later'}</span>
+              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+              <span>Previous</span>
             </button>
 
             {currentQuestionIndex < totalQuestions - 1 ? (
               <button 
                 onClick={() => navigateQuestion(currentQuestionIndex + 1, 'left')}
-                className="h-11 px-4 flex-[1.4] rounded-xl bg-primary text-on-primary font-headline font-semibold text-[14px] flex items-center justify-center gap-1.5 shadow-xs active:scale-95 hover:bg-primary-container transition-all cursor-pointer"
+                className="h-11 px-4 flex-1 rounded-xl bg-primary text-on-primary font-headline font-semibold text-[14px] flex items-center justify-center gap-1.5 shadow-xs active:scale-95 hover:bg-primary-container transition-all cursor-pointer"
               >
-                <span>Next Question</span>
+                <span>Next</span>
                 <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
               </button>
             ) : (
               <button 
                 onClick={() => setShowConfirmModal(true)}
-                className="h-11 px-4 flex-[1.4] rounded-xl bg-secondary-container text-on-secondary-container font-headline font-semibold text-[14px] flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
+                className="h-11 px-4 flex-1 rounded-xl bg-secondary-container text-on-secondary-container font-headline font-semibold text-[14px] flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
               >
-                <span>Submit Exam</span>
+                <span>Submit</span>
                 <span className="material-symbols-outlined text-[18px]">send</span>
               </button>
             )}

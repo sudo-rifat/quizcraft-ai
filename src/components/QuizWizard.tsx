@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import StitchSelect from './StitchSelect';
-import { Quiz } from '../types';
-import { db } from '../db/db';
+import { Quiz, Settings } from '../types';
+import { db, defaultSettings } from '../db/db';
 import { useActiveProfile } from '../context/ProfileContext';
+import { generateQuizViaApi, hasApiKeyConfigured } from '../services/quizGenerationService';
 
 interface QuizWizardProps {
   onStartExam: (data: { quiz: Quiz; config: any }) => void;
@@ -17,6 +19,18 @@ export default function QuizWizard({ onStartExam, onRequestStartExam, onSwitchTa
   const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Settings for API key detection
+  const settings = useLiveQuery(() => db.settings.get('user_prefs'), []) || defaultSettings;
+  const hasKey = hasApiKeyConfigured(settings as Settings);
+
+  // AI Auto-Generation State
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [fallbackMode, setFallbackMode] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
 
   const availableSubjects = activeProfile?.subjects && activeProfile.subjects.length > 0
     ? activeProfile.subjects
@@ -181,6 +195,69 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
     }
   };
 
+  // Image file selection for Option 3
+  const handleImageSelect = (file: File | undefined) => {
+    if (!file) return;
+    setImageFile(file);
+    const url = URL.createObjectURL(file);
+    setImagePreviewUrl(url);
+  };
+
+  // Convert image file to base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(',')[1]; // Remove data:mime;base64, prefix
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // ⚡ Auto Generate via API
+  const handleAutoGenerate = async () => {
+    setAiGenerating(true);
+    setAiError(null);
+
+    try {
+      let imageBase64: string | undefined;
+      let imageMimeType: string | undefined;
+
+      if (creationMode === 'readymade_image' && imageFile) {
+        imageBase64 = await fileToBase64(imageFile);
+        imageMimeType = imageFile.type || 'image/jpeg';
+      }
+
+      const result = await generateQuizViaApi(
+        promptText,
+        settings as Settings,
+        imageBase64,
+        imageMimeType,
+      );
+
+      if (result.success && result.quiz) {
+        // Auto-fill JSON and validate
+        const jsonStr = JSON.stringify(result.quiz, null, 2);
+        setJsonText(jsonStr);
+        showToast('success', `Quiz generated! ${result.quiz.questions.length} questions ready. ✓`);
+      } else {
+        if (result.isRateLimit) {
+          setFallbackMode(true);
+          showToast('warning', 'API limit reached! Switched to Prompt Mode.');
+        } else {
+          setAiError(result.error || 'Generation failed.');
+        }
+      }
+    } catch (err: any) {
+      setAiError(err.message || 'Unexpected error.');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   const handleFileUpload = (file: File | undefined) => {
     if (!file) return;
     const reader = new FileReader();
@@ -248,17 +325,8 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
             <h1 className="font-headline text-2xl font-bold tracking-tight text-on-surface">
               Create New Quiz ⚡
             </h1>
-            <p className="text-xs text-outline mt-0.5 font-body">
-              Choose how you want to create your quiz session
-            </p>
           </div>
-          <button
-            type="button"
-            onClick={() => onSwitchTab?.('home')}
-            className="w-8 h-8 rounded-full bg-surface-container-low flex items-center justify-center text-outline hover:text-on-surface"
-          >
-            <span className="material-symbols-outlined text-[18px]">close</span>
-          </button>
+
         </div>
 
         {/* 3 Mode Option Cards */}
@@ -271,25 +339,16 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
             }}
             className="group rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 shadow-xs hover:border-primary hover:shadow-md transition-all cursor-pointer active:scale-[0.99] space-y-2.5"
           >
-            <div className="flex items-center justify-between">
-              <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+            <div>
+              <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-2">
                 <span className="material-symbols-outlined text-[20px]">auto_awesome</span>
               </div>
-              <span className="text-[10px] font-headline font-semibold text-primary uppercase tracking-wider">
-                Option 1
-              </span>
-            </div>
-            <div>
               <h3 className="font-headline font-bold text-base text-on-surface">
                 Generate by Topic & Subject
               </h3>
               <p className="text-xs font-body text-outline mt-0.5 leading-relaxed">
                 Generate new questions based on subject, chapter, and topic.
               </p>
-            </div>
-            <div className="flex items-center gap-1 text-xs font-headline font-semibold text-primary group-hover:translate-x-0.5 transition-transform">
-              <span>Select Mode</span>
-              <span className="material-symbols-outlined text-[15px]">chevron_right</span>
             </div>
           </div>
 
@@ -301,25 +360,16 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
             }}
             className="group rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 shadow-xs hover:border-tertiary hover:shadow-md transition-all cursor-pointer active:scale-[0.99] space-y-2.5"
           >
-            <div className="flex items-center justify-between">
-              <div className="w-9 h-9 rounded-xl bg-tertiary/10 text-tertiary flex items-center justify-center">
+            <div>
+              <div className="w-9 h-9 rounded-xl bg-tertiary/10 text-tertiary flex items-center justify-center mb-2">
                 <span className="material-symbols-outlined text-[20px]">description</span>
               </div>
-              <span className="text-[10px] font-headline font-semibold text-tertiary uppercase tracking-wider">
-                Option 2
-              </span>
-            </div>
-            <div>
               <h3 className="font-headline font-bold text-base text-on-surface">
                 Readymade Text / Copied MCQs
               </h3>
               <p className="text-xs font-body text-outline mt-0.5 leading-relaxed">
                 Paste copied text, questions, or notes to build AI prompt.
               </p>
-            </div>
-            <div className="flex items-center gap-1 text-xs font-headline font-semibold text-tertiary group-hover:translate-x-0.5 transition-transform">
-              <span>Select Mode</span>
-              <span className="material-symbols-outlined text-[15px]">chevron_right</span>
             </div>
           </div>
 
@@ -331,25 +381,16 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
             }}
             className="group rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 shadow-xs hover:border-secondary hover:shadow-md transition-all cursor-pointer active:scale-[0.99] space-y-2.5"
           >
-            <div className="flex items-center justify-between">
-              <div className="w-9 h-9 rounded-xl bg-secondary-container/40 text-secondary flex items-center justify-center">
+            <div>
+              <div className="w-9 h-9 rounded-xl bg-secondary-container/40 text-secondary flex items-center justify-center mb-2">
                 <span className="material-symbols-outlined text-[20px]">add_a_photo</span>
               </div>
-              <span className="text-[10px] font-headline font-semibold text-secondary uppercase tracking-wider">
-                Option 3
-              </span>
-            </div>
-            <div>
               <h3 className="font-headline font-bold text-base text-on-surface">
                 Image / Photo of MCQs 📷
               </h3>
               <p className="text-xs font-body text-outline mt-0.5 leading-relaxed">
                 Copy OCR prompt to use with photos of MCQs from books/notes.
               </p>
-            </div>
-            <div className="flex items-center gap-1 text-xs font-headline font-semibold text-secondary group-hover:translate-x-0.5 transition-transform">
-              <span>Direct to AI Prompt</span>
-              <span className="material-symbols-outlined text-[15px]">chevron_right</span>
             </div>
           </div>
         </div>
@@ -358,7 +399,7 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
   }
 
   return (
-    <div className="flex-1 w-full pb-28 max-w-md mx-auto flex flex-col space-y-5">
+    <div className="flex-1 w-full pb-36 md:pb-28 max-w-md mx-auto flex flex-col space-y-5">
       {/* Wizard Header Bar with Back button */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs font-headline">
@@ -634,11 +675,11 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
         <div className="space-y-4">
           <div>
             <h2 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
-              {creationMode === 'readymade_image' ? 'Image OCR Prompt' : 'Generate & Import'}
+              Generate & Import
             </h2>
             <p className="text-xs text-outline mt-0.5 font-body">
-              {creationMode === 'readymade_image'
-                ? 'Copy prompt → paste in ChatGPT/Gemini → attach photo'
+              {hasKey && !fallbackMode
+                ? 'Auto-generate with AI or use manual prompt'
                 : 'Copy AI prompt or paste quiz JSON'}
             </p>
           </div>
@@ -668,6 +709,115 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
             </div>
           )}
 
+          {/* Image Upload for Option 3 */}
+          {creationMode === 'readymade_image' && (
+            <div className="space-y-2">
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handleImageSelect(e.target.files?.[0])}
+              />
+              {imagePreviewUrl ? (
+                <div className="relative rounded-xl overflow-hidden border border-surface-container-high">
+                  <img
+                    src={imagePreviewUrl}
+                    alt="Uploaded MCQ"
+                    className="w-full max-h-40 object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setImageFile(null); setImagePreviewUrl(null); }}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-surface/90 backdrop-blur text-on-surface flex items-center justify-center shadow-sm hover:bg-error-container cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">close</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  className="w-full h-24 rounded-xl border-2 border-dashed border-outline-variant/60 bg-surface-container-lowest flex flex-col items-center justify-center gap-1.5 text-outline hover:border-secondary hover:text-secondary transition-all cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-2xl">add_a_photo</span>
+                  <span className="text-xs font-headline font-semibold">Upload Photo of MCQs</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* ⚡ AUTO GENERATE SECTION (when API key exists & not in fallback) */}
+          {hasKey && !fallbackMode && (
+            <div className="space-y-3">
+              {/* Auto Generate Button */}
+              {!aiGenerating ? (
+                <button
+                  type="button"
+                  onClick={handleAutoGenerate}
+                  disabled={creationMode === 'readymade_image' && !imageFile && true}
+                  className="w-full h-12 rounded-xl bg-primary text-on-primary font-headline text-sm font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-primary/90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="material-symbols-outlined text-[20px]">bolt</span>
+                  <span>⚡ Auto Generate with AI</span>
+                </button>
+              ) : (
+                <div className="w-full py-4 rounded-xl bg-primary/10 border border-primary/30 flex flex-col items-center justify-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-xl animate-spin">progress_activity</span>
+                    <span className="text-sm font-headline font-semibold text-primary">Generating quiz...</span>
+                  </div>
+                  <span className="text-[11px] font-body text-outline">Usually takes 5-15 seconds</span>
+                </div>
+              )}
+
+              {/* AI Error display */}
+              {aiError && (
+                <div className="p-3 rounded-xl bg-error-container/50 border border-error/20 space-y-2">
+                  <p className="text-xs font-headline font-semibold text-on-error-container">{aiError}</p>
+                  <button
+                    type="button"
+                    onClick={() => { setFallbackMode(true); setAiError(null); }}
+                    className="text-xs font-headline font-semibold text-primary hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                    Use Copy Prompt instead
+                  </button>
+                </div>
+              )}
+
+              {/* Divider */}
+              {!aiGenerating && !aiError && (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-surface-container-highest"></div>
+                  <span className="text-[11px] font-headline font-semibold text-outline uppercase tracking-wider">or manually</span>
+                  <div className="flex-1 h-px bg-surface-container-highest"></div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Fallback / Rate Limit Banner */}
+          {fallbackMode && (
+            <div className="p-3 rounded-xl bg-tertiary-container/30 border border-tertiary/20 flex items-start gap-2">
+              <span className="material-symbols-outlined text-tertiary text-[18px] mt-0.5">info</span>
+              <div>
+                <p className="text-xs font-headline font-semibold text-on-surface">API limit reached</p>
+                <p className="text-[11px] font-body text-outline mt-0.5">Use the prompt below to generate with ChatGPT / Gemini</p>
+              </div>
+            </div>
+          )}
+
+          {/* No API Key Tip */}
+          {!hasKey && (
+            <div className="p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[16px]">lightbulb</span>
+              <span className="text-[11px] font-body text-outline">Add API key in <strong className="text-on-surface">Settings</strong> for 1-click auto-generation</span>
+            </div>
+          )}
+
+          {/* Copy Prompt & Import JSON Row */}
           <div className="flex gap-2">
             <button
               onClick={handleCopyPrompt}
@@ -708,7 +858,7 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
       )}
 
       {/* Fixed Bottom Wizard Actions */}
-      <footer className="fixed bottom-0 left-0 w-full z-40 pb-safe bg-surface/95 backdrop-blur-lg border-t border-surface-container-high/70">
+      <footer className="fixed bottom-16 md:bottom-0 left-0 w-full z-40 pb-safe bg-surface/95 backdrop-blur-lg border-t border-surface-container-high/70">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => {

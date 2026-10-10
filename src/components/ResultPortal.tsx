@@ -27,7 +27,6 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
   } = resultRecord as any;
 
   const [filterTab, setFilterTab] = useState('all');
-  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   // AI Doubt Modal state
   const [aiTargetQuestion, setAiTargetQuestion] = useState<any>(null);
@@ -86,10 +85,6 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
     }
   };
 
-  const circleRadius = 50;
-  const circumference = 2 * Math.PI * circleRadius;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
-
   return (
     <div className="flex-1 flex flex-col max-w-md mx-auto w-full pb-28 pt-2 space-y-4">
       {/* Test Results Header */}
@@ -97,60 +92,21 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
         <h1 className="font-headline font-semibold text-lg text-on-surface tracking-tight">
           Test Results
         </h1>
-        <button 
-          onClick={onGoHome}
-          className="text-xs font-headline font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[16px]">home</span>
-          <span>Home</span>
-        </button>
-      </div>
-
-      {/* Hero Score Card */}
-      <div className="rounded-2xl bg-surface-container-lowest p-5 shadow-xs flex flex-col items-center text-center border border-surface-container/80">
-        <div className="relative my-2 flex items-center justify-center">
-          <svg className="w-28 h-28 -rotate-90 transform" viewBox="0 0 120 120">
-            <circle 
-              className="text-surface-container" 
-              cx="60" 
-              cy="60" 
-              fill="transparent" 
-              r="50" 
-              stroke="currentColor" 
-              strokeWidth="8"
-            />
-            <circle 
-              className="text-primary transition-all duration-700 ease-out" 
-              cx="60" 
-              cy="60" 
-              fill="transparent" 
-              r="50" 
-              stroke="currentColor" 
-              strokeWidth="8"
-              strokeDasharray={circumference}
-              strokeDashoffset={strokeDashoffset}
-              strokeLinecap="round"
-            />
-          </svg>
-          <div className="absolute flex flex-col items-center justify-center text-center">
-            <span className="font-headline text-3xl text-primary font-bold tracking-tight">{percentage}%</span>
-            <span className="text-[11px] font-medium text-on-surface-variant uppercase tracking-wider">Score</span>
-          </div>
-        </div>
-
-        <div className="mt-2">
-          <h2 className="font-headline text-lg font-semibold text-on-surface">{quiz_title}</h2>
-          <div className="mt-1 flex items-center justify-center gap-2 text-xs text-on-surface-variant">
-            <span className="font-medium text-tertiary">{correctCount} of {quiz_data.questions.length} Correct</span>
-            <span>•</span>
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">timer</span> {timeSpentFormatted}
-            </span>
-            <span>•</span>
-            <span className={`font-medium ${percentage >= 50 ? 'text-primary' : 'text-error'}`}>
-              {percentage >= 50 ? 'Passed' : 'Needs Practice'}
-            </span>
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onRetake}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all cursor-pointer"
+            title="Retake Test"
+          >
+            <span className="material-symbols-outlined text-[18px]">replay</span>
+          </button>
+          <button
+            onClick={onGoHome}
+            className="text-xs font-headline font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[16px]">home</span>
+            <span>Home</span>
+          </button>
         </div>
       </div>
 
@@ -174,24 +130,7 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
         </div>
       </div>
 
-      {/* Action Buttons Row */}
-      <div className="grid grid-cols-2 gap-2 pt-1">
-        <button 
-          onClick={onRetake}
-          className="h-11 rounded-xl bg-surface-container text-on-surface font-headline text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-[0.99] transition-all cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[16px]">replay</span>
-          <span>Retake Test</span>
-        </button>
 
-        <button 
-          onClick={onGoHome}
-          className="h-11 rounded-xl bg-surface-container text-on-surface-variant hover:text-on-surface font-headline text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-[0.99] transition-all cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[16px]">home</span>
-          <span>Back to Home</span>
-        </button>
-      </div>
 
       {/* Solutions / Question Review */}
       <div className="space-y-3 pt-2">
@@ -223,101 +162,69 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
         </div>
 
         {/* Review Cards */}
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {filteredQuestions.map((q: any, idx: number) => {
             const qId = q.id || (idx + 1);
             const userChoice = user_answers[qId];
             const correctChoice = q.correct_answer;
             const isCorrect = userChoice === correctChoice;
             const isUnattempted = userChoice === undefined;
-            const isExpanded = expandedId === qId;
 
             return (
-              <div 
+              <div
                 key={qId}
-                className={`rounded-2xl bg-surface-container-lowest border p-4 shadow-xs transition-all ${
-                  isCorrect ? 'border-tertiary/40' : isUnattempted ? 'border-outline-variant' : 'border-error/40'
-                }`}
+                className="rounded-xl bg-surface-container-lowest border border-surface-container/80 px-3.5 py-3"
               >
-                <div 
-                  className="flex items-start gap-3 cursor-pointer"
-                  onClick={() => setExpandedId(isExpanded ? null : qId)}
-                >
-                  <div className="mt-0.5 shrink-0">
-                    {isCorrect ? (
-                      <span className="material-symbols-outlined text-tertiary text-xl">check_circle</span>
-                    ) : isUnattempted ? (
-                      <span className="material-symbols-outlined text-outline text-xl">help_outline</span>
-                    ) : (
-                      <span className="material-symbols-outlined text-error text-xl">cancel</span>
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-headline font-semibold text-sm text-on-surface leading-snug">
-                      {q.question}
-                    </h4>
-
-                    {!isExpanded && (
-                      <p className="text-xs text-primary font-headline font-medium mt-1 flex items-center gap-0.5">
-                        <span>Show Options & AI Doubt Solver</span>
-                        <span className="material-symbols-outlined text-[16px]">expand_more</span>
-                      </p>
-                    )}
-                  </div>
+                {/* Question row */}
+                <div className="flex items-start gap-2 mb-2.5">
+                  {isCorrect ? (
+                    <span className="material-symbols-outlined text-tertiary text-[17px] mt-0.5 shrink-0">check_circle</span>
+                  ) : !isUnattempted ? (
+                    <span className="material-symbols-outlined text-error text-[17px] mt-0.5 shrink-0">cancel</span>
+                  ) : null}
+                  <p className="text-xs font-headline font-semibold text-on-surface leading-snug">{q.question}</p>
                 </div>
 
-                {/* Expanded Answer Options & Rationale */}
-                {isExpanded && (
-                  <div className="mt-3 pt-3 border-t border-surface-container space-y-3">
-                    <div className="space-y-1.5">
-                      {q.options.map((optText: string, optIdx: number) => {
-                        const isTargetCorrect = optIdx === correctChoice;
-                        const isUserWrongChoice = optIdx === userChoice && !isCorrect;
-
-                        let optStyle = 'p-2.5 rounded-xl border text-xs font-body flex items-center justify-between ';
-                        if (isTargetCorrect) {
-                          optStyle += 'bg-tertiary-container/30 border-tertiary text-on-tertiary-container font-semibold';
-                        } else if (isUserWrongChoice) {
-                          optStyle += 'bg-error-container/30 border-error text-on-error-container font-semibold';
-                        } else {
-                          optStyle += 'bg-surface-container-low border-outline-variant/40 text-on-surface';
-                        }
-
-                        return (
-                          <div key={optIdx} className={optStyle}>
-                            <span>{optText}</span>
-                            {isTargetCorrect && (
-                              <span className="material-symbols-outlined text-[16px] text-tertiary">check</span>
-                            )}
-                            {isUserWrongChoice && (
-                              <span className="material-symbols-outlined text-[16px] text-error">close</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {q.explanation && (
-                      <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface space-y-1">
-                        <div className="flex items-center gap-1.5 text-primary font-headline font-semibold">
-                          <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-                          <span>Explanation Rationale</span>
-                        </div>
-                        <p className="font-body text-on-surface-variant leading-relaxed">
-                          {q.explanation}
-                        </p>
+                {/* Options - plain text list */}
+                <div className="space-y-1 pl-1">
+                  {q.options.map((optText: string, optIdx: number) => {
+                    const isTargetCorrect = optIdx === correctChoice;
+                    const isUserWrongChoice = optIdx === userChoice && !isCorrect;
+                    return (
+                      <div
+                        key={optIdx}
+                        className={`flex items-center gap-2 text-[11px] font-body ${
+                          isTargetCorrect
+                            ? 'text-on-surface font-bold'
+                            : isUserWrongChoice
+                            ? 'text-error/70 line-through'
+                            : 'text-on-surface-variant'
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          isTargetCorrect ? 'bg-tertiary' : isUserWrongChoice ? 'bg-error/50' : 'bg-outline-variant/50'
+                        }`} />
+                        {optText}
                       </div>
-                    )}
+                    );
+                  })}
+                </div>
 
-                    {/* Ask AI Doubt Button */}
+                {/* Explanation + Ask AI */}
+                {(q.explanation || true) && (
+                  <div className="mt-2.5 flex items-start justify-between gap-2">
+                    {q.explanation ? (
+                      <p className="text-[10px] font-body text-on-surface-variant/70 leading-relaxed flex-1">
+                        {q.explanation}
+                      </p>
+                    ) : <span />}
                     <button
                       type="button"
                       onClick={() => handleAskAi(q)}
-                      className="w-full h-10 rounded-xl bg-primary/10 border border-primary/30 text-primary font-headline text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary/20 transition-all cursor-pointer"
+                      className="flex items-center gap-0.5 text-[10px] font-headline font-semibold text-primary/50 hover:text-primary transition-colors cursor-pointer shrink-0"
                     >
-                      <span className="material-symbols-outlined text-[18px]">smart_toy</span>
-                      Ask AI to Explain / Clear Doubts
+                      <span className="material-symbols-outlined text-[12px]">smart_toy</span>
+                      Ask AI
                     </button>
                   </div>
                 )}

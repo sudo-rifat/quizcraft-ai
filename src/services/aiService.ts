@@ -45,30 +45,64 @@ Respond concisely and clearly in student-friendly Bengali and English where rele
 `.trim();
 
   if (provider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
-          },
-        ],
-      }),
-    });
+    const candidateModels = [
+      'gemini-flash-latest',
+      'gemini-3.8-flash',
+      'gemini-3.6-flash',
+      'gemini-2.5-flash',
+      'gemini-flash-lite-latest',
+      'gemini-3.5-flash',
+    ];
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      const errorMsg = errData.error?.message || response.statusText || 'Gemini API Error';
-      throw new Error(`Gemini API Error: ${errorMsg}`);
+    for (const model of candidateModels) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }],
+              },
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          const errorMsg = errData.error?.message || response.statusText || 'Gemini API Error';
+          const msgLower = errorMsg.toLowerCase();
+
+          const isModelNotFound =
+            response.status === 404 ||
+            msgLower.includes('not found') ||
+            msgLower.includes('not supported') ||
+            msgLower.includes('no longer available');
+
+          if (isModelNotFound) {
+            lastError = new Error(`Gemini (${model}): ${errorMsg}`);
+            continue;
+          }
+
+          throw new Error(`Gemini API Error (${response.status}): ${errorMsg}`);
+        }
+
+        const data = await response.json();
+        const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!resultText) throw new Error('Received empty response from Gemini AI.');
+        return resultText;
+      } catch (err: any) {
+        if (err.message && !err.message.includes('not found') && !err.message.includes('not supported') && !err.message.includes('404')) {
+          throw err;
+        }
+        lastError = err;
+      }
     }
 
-    const data = await response.json();
-    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!resultText) throw new Error('Received empty response from Gemini AI.');
-    return resultText;
+    throw lastError || new Error('All Gemini model candidates failed. Please verify your API key.');
   } else {
     const url = 'https://api.openai.com/v1/chat/completions';
 

@@ -23,8 +23,8 @@ export default function Navigation({ currentTab, onSwitchTab }: NavigationProps)
 
   const navItems = [
     { id: 'home', label: 'Home', icon: 'home' },
+    { id: 'create', label: 'Create', icon: 'add_circle' },
     { id: 'library', label: 'Library', icon: 'local_library' },
-    { id: 'progress', label: 'Progress', icon: 'trending_up' },
     { id: 'history', label: 'History', icon: 'history' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
   ];

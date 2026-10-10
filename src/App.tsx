@@ -229,14 +229,14 @@ function AppContent() {
             />
           )}
 
-          {currentTab === 'create' && (
+          <div className={currentTab === 'create' ? 'block' : 'hidden'}>
             <QuizWizard
               onStartExam={handleStartExam}
               onRequestStartExam={handleRequestStartExam}
               onSwitchTab={setCurrentTab}
               showToast={showToast}
             />
-          )}
+          </div>
 
           {currentTab === 'exam' && activeQuiz && (
             <ExamPortal
@@ -257,13 +257,6 @@ function AppContent() {
               }}
               onGoHome={() => setCurrentTab('home')}
             />
-          )}
-
-          {currentTab === 'progress' && (
-            <ProgressDashboard showToast={showToast} onViewResult={(rec) => {
-              setActiveResultRecord(rec);
-              setCurrentTab('result');
-            }} />
           )}
 
           {currentTab === 'history' && (
