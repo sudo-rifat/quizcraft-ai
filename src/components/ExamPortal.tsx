@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Quiz } from '../types';
 import { db } from '../db/db';
 import { useActiveProfile } from '../context/ProfileContext';
+import MathText from './MathText';
 
 interface ExamPortalProps {
   quizData: Quiz;
@@ -31,7 +32,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
         const flagMap: Record<string, boolean> = {};
         quizData.questions.forEach((q, idx) => {
           const qId = q.id || (idx + 1);
-          const isBookmarked = bookmarks.some(b => b.question_text === q.question);
+          const isBookmarked = bookmarks.some(b => b.question_text === (q.question || q.question_text));
           if (isBookmarked) flagMap[qId] = true;
         });
         setFlagged(prev => ({ ...prev, ...flagMap }));
@@ -220,21 +221,28 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
 
     if (!activeProfileId) return;
 
+    const questionText = currentQ.question || currentQ.question_text || '';
+    const correctAnswer = typeof currentQ.correct_answer === 'number'
+      ? currentQ.correct_answer
+      : typeof currentQ.correct_answer_index === 'number'
+      ? currentQ.correct_answer_index
+      : 0;
+
     try {
       if (nextFlagged) {
         const existing = await db.bookmarks
           .where('profileId')
           .equals(activeProfileId)
-          .filter(b => b.quiz_title === quizData.quiz_title && b.question_text === currentQ.question)
+          .filter(b => b.quiz_title === quizData.quiz_title && b.question_text === questionText)
           .first();
 
         if (!existing) {
           await db.bookmarks.add({
             profileId: activeProfileId,
             quiz_title: quizData.quiz_title,
-            question_text: currentQ.question,
+            question_text: questionText,
             options: currentQ.options,
-            correct_answer: currentQ.correct_answer,
+            correct_answer: correctAnswer,
             explanation: currentQ.explanation || '',
             savedAt: new Date().toISOString(),
           });
@@ -244,7 +252,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
         const existing = await db.bookmarks
           .where('profileId')
           .equals(activeProfileId)
-          .filter(b => b.quiz_title === quizData.quiz_title && b.question_text === currentQ.question)
+          .filter(b => b.quiz_title === quizData.quiz_title && b.question_text === questionText)
           .first();
 
         if (existing && existing.id) {
@@ -316,7 +324,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
             </span>
           </div>
           <h2 className="font-headline font-semibold text-[17px] leading-snug text-on-surface mb-2">
-            {currentQ.question}
+            <MathText text={currentQ.question || currentQ.question_text || ''} />
           </h2>
         </section>
 
@@ -343,7 +351,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
                     {label}
                   </span>
                   <span className={`font-body text-[15px] leading-tight ${isSelected ? 'font-semibold text-on-surface' : 'font-medium text-on-surface'}`}>
-                    {optText}
+                    <MathText text={optText} />
                   </span>
                 </div>
 

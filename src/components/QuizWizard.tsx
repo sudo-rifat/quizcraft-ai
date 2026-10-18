@@ -5,7 +5,7 @@ import { Quiz, Settings } from '../types';
 import { db, defaultSettings } from '../db/db';
 import { useActiveProfile } from '../context/ProfileContext';
 import { generateQuizViaApi, hasApiKeyConfigured } from '../services/quizGenerationService';
-import { normalizeQuizJson } from '../utils/quizJson';
+import { normalizeQuizJson, normalizeQuiz, formatQuizForExport } from '../utils/quizJson';
 
 interface QuizWizardProps {
   onStartExam: (data: { quiz: Quiz; config: any }) => void;
@@ -167,10 +167,11 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
 
     try {
       const cleaned = normalizeQuizJson(jsonText);
-      const parsed = JSON.parse(cleaned);
+      const raw = JSON.parse(cleaned);
+      const parsed = normalizeQuiz(raw);
 
       if (parsed && parsed.quiz_title && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-        setValidation({ isValid: true, message: '✓ Valid Quiz Format', parsed });
+        setValidation({ isValid: true, message: `✓ Valid Quiz Format (${parsed.questions.length} questions)`, parsed });
       } else {
         setValidation({ isValid: false, message: 'Missing required quiz_title or questions array.', parsed: null });
       }
@@ -240,8 +241,9 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
       );
 
       if (result.success && result.quiz) {
-        // Auto-fill JSON and validate
-        const jsonStr = JSON.stringify(result.quiz, null, 2);
+        // Auto-fill JSON strictly matching standard prompt schema
+        const cleanQuiz = formatQuizForExport(result.quiz);
+        const jsonStr = JSON.stringify(cleanQuiz, null, 2);
         setJsonText(jsonStr);
         showToast('success', `Quiz generated! ${result.quiz.questions.length} questions ready. ✓`);
       } else {
@@ -268,12 +270,13 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
 
   const handleStartExam = () => {
     if (!validation.isValid || !validation.parsed) return;
+    const normalized = normalizeQuiz(validation.parsed);
 
     if (onRequestStartExam) {
-      onRequestStartExam(validation.parsed);
+      onRequestStartExam(normalized);
     } else {
       onStartExam({
-        quiz: validation.parsed,
+        quiz: normalized,
         config: {
           durationMinutes: parseInt(duration) || 10,
           marksPerQuestion: parseFloat(marks) || 1,
@@ -285,27 +288,28 @@ IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching
 
   const handleSaveQuiz = async () => {
     if (!validation.isValid || !validation.parsed || !activeProfileId) return;
+    const normalized = normalizeQuiz(validation.parsed);
 
     setIsSaving(true);
     try {
       const existing = await db.quizzes
         .where('profileId')
         .equals(activeProfileId)
-        .filter((q) => q.quiz_title === validation.parsed!.quiz_title)
+        .filter((q) => q.quiz_title === normalized.quiz_title)
         .first();
 
       if (existing) {
-        showToast('warning', `"${validation.parsed.quiz_title}" is already in your library!`);
+        showToast('warning', `"${normalized.quiz_title}" is already in your library!`);
         setIsSaving(false);
         return;
       }
 
       await db.quizzes.add({
         profileId: activeProfileId,
-        quiz_title: validation.parsed.quiz_title,
-        quiz_data: validation.parsed,
+        quiz_title: normalized.quiz_title,
+        quiz_data: normalized,
         savedAt: new Date().toISOString(),
-        questionCount: validation.parsed.questions.length,
+        questionCount: normalized.questions.length,
       });
       showToast('success', `Quiz saved to your library! ✓`);
       setJsonText('');

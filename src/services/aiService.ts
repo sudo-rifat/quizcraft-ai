@@ -22,6 +22,7 @@ export async function askAiForExplanation({
   const openaiKey = settings.openaiApiKey?.trim();
   const openrouterKey = settings.openrouterApiKey?.trim();
   const groqKey = settings.groqApiKey?.trim();
+  const huggingfaceKey = settings.huggingfaceApiKey?.trim();
 
   if (provider === 'gemini' && !geminiKey) {
     throw new Error('Google Gemini API Key is missing. Please add your key in Settings.');
@@ -35,6 +36,9 @@ export async function askAiForExplanation({
   }
   if (provider === 'groq' && !groqKey) {
     throw new Error('Groq API Key is missing. Please add your key in Settings.');
+  }
+  if (provider === 'huggingface' && !huggingfaceKey) {
+    throw new Error('Hugging Face API Key is missing. Please add your key in Settings.');
   }
 
   const prompt = `
@@ -123,10 +127,15 @@ Do not add greetings, emojis, repeated encouragement, or extra closing remarks. 
 
     throw lastError || new Error('All Gemini model candidates failed. Please verify your API key.');
   } else {
+    const openrouterModel = settings.openrouterModel || 'openrouter/free';
+    const huggingfaceModel = settings.huggingfaceModel || 'Qwen/Qwen2.5-72B-Instruct';
+    const groqModel = settings.groqModel || 'llama-3.3-70b-versatile';
     const config = provider === 'openrouter'
-      ? { key: openrouterKey!, url: 'https://openrouter.ai/api/v1/chat/completions', model: 'openrouter/free', name: 'OpenRouter' }
+      ? { key: openrouterKey!, url: 'https://openrouter.ai/api/v1/chat/completions', model: openrouterModel, name: 'OpenRouter' }
       : provider === 'groq'
-      ? { key: groqKey!, url: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', name: 'Groq' }
+      ? { key: groqKey!, url: 'https://api.groq.com/openai/v1/chat/completions', model: groqModel, name: 'Groq' }
+      : provider === 'huggingface'
+      ? { key: huggingfaceKey!, url: 'https://router.huggingface.co/v1/chat/completions', model: huggingfaceModel, name: 'Hugging Face' }
       : { key: openaiKey!, url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini', name: 'OpenAI' };
 
     const response = await fetch(config.url, {
@@ -146,9 +155,19 @@ Do not add greetings, emojis, repeated encouragement, or extra closing remarks. 
     });
 
     if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      const errorMsg = errData.error?.message || response.statusText || 'OpenAI API Error';
-      throw new Error(`${config.name} API Error: ${errorMsg}`);
+      let errorMsg = response.statusText || 'API Error';
+      try {
+        const text = await response.text();
+        try {
+          const errData = JSON.parse(text);
+          errorMsg = errData.error?.message || errData.message || errData.error || (typeof errData === 'string' ? errData : text);
+        } catch {
+          errorMsg = text || errorMsg;
+        }
+      } catch {
+        // use default statusText
+      }
+      throw new Error(`${config.name} (${response.status}): ${errorMsg}`);
     }
 
     const data = await response.json();

@@ -4,11 +4,13 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { ExamResult } from '../types';
 import { db, defaultSettings } from '../db/db';
 import { askAiForExplanation } from '../services/aiService';
+import MathText from './MathText';
 
 interface ResultPortalProps {
   resultRecord: ExamResult;
   onRetake: () => void;
   onGoHome: () => void;
+  backLabel?: string;
 }
 
 interface AiResponseSection {
@@ -41,15 +43,20 @@ function parseAiResponse(response: string): AiResponseSection[] {
 }
 
 function renderAiLine(line: string) {
+  // Split on **bold** markers first, then pass each plain segment through MathText
   const pieces = line.split(/(\*\*[^*]+\*\*)/g);
   return pieces.map((piece, index) =>
-    piece.startsWith('**') && piece.endsWith('**')
-      ? <strong key={index} className="font-headline font-semibold text-on-surface">{piece.slice(2, -2)}</strong>
-      : <React.Fragment key={index}>{piece}</React.Fragment>
+    piece.startsWith('**') && piece.endsWith('**') ? (
+      <strong key={index} className="font-headline font-semibold text-on-surface">
+        <MathText text={piece.slice(2, -2)} />
+      </strong>
+    ) : (
+      <MathText key={index} text={piece} />
+    )
   );
 }
 
-export default function ResultPortal({ resultRecord, onRetake, onGoHome }: ResultPortalProps) {
+export default function ResultPortal({ resultRecord, onRetake, onGoHome, backLabel = 'Home' }: ResultPortalProps) {
   const { 
     quiz_title, 
     score, 
@@ -86,7 +93,8 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
   const filteredQuestions = quiz_data.questions.filter((q: any, idx: number) => {
     const qId = q.id || (idx + 1);
     const userChoice = user_answers[qId];
-    const isCorrect = userChoice === q.correct_answer;
+    const correctAns = typeof q.correct_answer === 'number' ? q.correct_answer : q.correct_answer_index;
+    const isCorrect = userChoice === correctAns;
     const isUnattempted = userChoice === undefined;
 
     if (filterTab === 'correct') return isCorrect;
@@ -103,12 +111,13 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
 
     const qId = q.id || (quiz_data.questions.indexOf(q) + 1);
     const userChoice = user_answers[qId];
-    const correctAnswerText = q.options[q.correct_answer] || '';
+    const correctAns = typeof q.correct_answer === 'number' ? q.correct_answer : (q.correct_answer_index ?? 0);
+    const correctAnswerText = q.options[correctAns] || '';
     const userSelectedText = userChoice !== undefined ? q.options[userChoice] : undefined;
 
     try {
       const res = await askAiForExplanation({
-        questionText: q.question,
+        questionText: q.question || q.question_text || '',
         options: q.options,
         correctAnswerText,
         userAnswerText: userSelectedText,
@@ -142,8 +151,8 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
             onClick={onGoHome}
             className="text-xs font-headline font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[16px]">home</span>
-            <span>Home</span>
+            <span className="material-symbols-outlined text-[16px]">{backLabel === 'Home' ? 'home' : 'arrow_back'}</span>
+            <span>{backLabel}</span>
           </button>
         </div>
       </div>
@@ -204,7 +213,7 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
           {filteredQuestions.map((q: any, idx: number) => {
             const qId = q.id || (idx + 1);
             const userChoice = user_answers[qId];
-            const correctChoice = q.correct_answer;
+            const correctChoice = typeof q.correct_answer === 'number' ? q.correct_answer : q.correct_answer_index;
             const isCorrect = userChoice === correctChoice;
             const isUnattempted = userChoice === undefined;
 
@@ -220,7 +229,9 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
                   ) : !isUnattempted ? (
                     <span className="material-symbols-outlined text-error text-[17px] mt-0.5 shrink-0">cancel</span>
                   ) : null}
-                  <p className="text-xs font-headline font-semibold text-on-surface leading-snug">{q.question}</p>
+                  <p className="text-xs font-headline font-semibold text-on-surface leading-snug">
+                    <MathText text={q.question || q.question_text || ''} />
+                  </p>
                 </div>
 
                 {/* Options - plain text list */}
@@ -242,7 +253,7 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                           isTargetCorrect ? 'bg-tertiary' : isUserWrongChoice ? 'bg-error/50' : 'bg-outline-variant/50'
                         }`} />
-                        {optText}
+                        <MathText text={optText} />
                       </div>
                     );
                   })}
@@ -253,7 +264,7 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
                   <div className="mt-2.5 flex items-start justify-between gap-2">
                     {q.explanation ? (
                       <p className="text-[10px] font-body text-on-surface-variant/70 leading-relaxed flex-1">
-                        {q.explanation}
+                        <MathText text={q.explanation} />
                       </p>
                     ) : <span />}
                     <button
@@ -285,11 +296,12 @@ export default function ResultPortal({ resultRecord, onRetake, onGoHome }: Resul
                     prefs.preferredAiProvider === 'openai' ? 'OpenAI ChatGPT'
                     : prefs.preferredAiProvider === 'openrouter' ? 'OpenRouter'
                     : prefs.preferredAiProvider === 'groq' ? 'Groq'
+                    : prefs.preferredAiProvider === 'huggingface' ? 'Hugging Face'
                     : 'Google Gemini'
                   })
                 </span>
-                <h3 className="font-headline font-bold text-sm text-on-surface line-clamp-1 mt-0.5">
-                  {aiTargetQuestion.question}
+                <h3 className="font-headline font-bold text-sm text-on-surface line-clamp-2 mt-0.5">
+                  <MathText text={aiTargetQuestion.question || aiTargetQuestion.question_text || ''} />
                 </h3>
               </div>
               <button

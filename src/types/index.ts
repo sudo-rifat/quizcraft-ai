@@ -19,13 +19,18 @@ export interface Profile {
 export interface Question {
   id: number | string;
   question: string;
+  question_text?: string;
   options: string[];
   correct_answer: number;
+  correct_answer_index?: number;
   explanation: string;
 }
 
 export interface Quiz {
+  id?: string;
   quiz_title: string;
+  created_at?: string;
+  total_questions?: number;
   questions: Question[];
 }
 
@@ -83,8 +88,12 @@ export interface Settings {
   geminiApiKey?: string;
   openaiApiKey?: string;
   openrouterApiKey?: string;
+  openrouterModel?: string;
   groqApiKey?: string;
-  preferredAiProvider?: 'gemini' | 'openai' | 'openrouter' | 'groq';
+  groqModel?: string;
+  huggingfaceApiKey?: string;
+  huggingfaceModel?: string;
+  preferredAiProvider?: 'gemini' | 'openai' | 'openrouter' | 'groq' | 'huggingface';
 }
 
 export interface Progress {

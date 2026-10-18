@@ -3,7 +3,7 @@ import { FileCode, Lightbulb, Atom, BookOpen, Languages, Settings, Play, AlertTr
 import StitchSelect from './StitchSelect';
 import { SAMPLE_QUIZZES } from '../data/sampleQuizzes';
 import { Quiz } from '../types';
-import { normalizeQuizJson } from '../utils/quizJson';
+import { normalizeQuizJson, normalizeQuiz } from '../utils/quizJson';
 
 interface JsonImporterProps {
   onStartExam: (data: { quiz: Quiz; config: any }) => void;
@@ -51,7 +51,8 @@ export default function JsonImporter({ onStartExam, showToast }: JsonImporterPro
       // Restore the double backslashes
       sanitizedText = sanitizedText.replace(/@@DOUBLE_SLASH@@/g, '\\\\');
 
-      const parsed = JSON.parse(sanitizedText);
+      const rawParsed = JSON.parse(sanitizedText);
+      const parsed = normalizeQuiz(rawParsed);
 
       if (!parsed.quiz_title || typeof parsed.quiz_title !== 'string') {
         throw new Error("Missing 'quiz_title' string.");
@@ -62,14 +63,16 @@ export default function JsonImporter({ onStartExam, showToast }: JsonImporterPro
       }
 
       parsed.questions.forEach((q: any, idx: number) => {
-        if (!q.question || typeof q.question !== 'string') {
+        const qText = q.question || q.question_text || q.text;
+        if (!qText || typeof qText !== 'string') {
           throw new Error(`Question #${idx + 1} text missing.`);
         }
         if (!q.options || !Array.isArray(q.options) || q.options.length < 2) {
           throw new Error(`Question #${idx + 1} must have 2+ options.`);
         }
-        if (typeof q.correct_answer !== 'number' || q.correct_answer < 0 || q.correct_answer >= q.options.length) {
-          throw new Error(`Question #${idx + 1} invalid correct_answer index (${q.correct_answer}).`);
+        const correctAns = typeof q.correct_answer === 'number' ? q.correct_answer : q.correct_answer_index;
+        if (typeof correctAns !== 'number' || correctAns < 0 || correctAns >= q.options.length) {
+          throw new Error(`Question #${idx + 1} invalid correct answer index (${correctAns}).`);
         }
       });
 

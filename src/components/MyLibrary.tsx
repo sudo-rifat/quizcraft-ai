@@ -543,13 +543,14 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
                       {idx + 1}
                     </span>
                     <p className="font-headline font-medium text-xs text-on-surface leading-relaxed">
-                      {q.question}
+                      {q.question || q.question_text}
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pl-7">
                     {q.options.map((opt, optIdx) => {
-                      const isCorrect = optIdx === q.correct_answer;
+                      const correctAns = typeof q.correct_answer === 'number' ? q.correct_answer : q.correct_answer_index;
+                      const isCorrect = optIdx === correctAns;
                       return (
                         <div
                           key={optIdx}

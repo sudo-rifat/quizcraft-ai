@@ -60,7 +60,11 @@ export const defaultSettings: Settings = {
   geminiApiKey: '',
   openaiApiKey: '',
   openrouterApiKey: '',
+  openrouterModel: 'openrouter/free',
   groqApiKey: '',
+  groqModel: 'llama-3.3-70b-versatile',
+  huggingfaceApiKey: '',
+  huggingfaceModel: 'Qwen/Qwen2.5-72B-Instruct',
   preferredAiProvider: 'gemini',
 };
 

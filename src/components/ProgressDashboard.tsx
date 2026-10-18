@@ -3,14 +3,16 @@ import { db } from '../db/db';
 import { useActiveProfile } from '../context/ProfileContext';
 import { useProfileResults } from '../hooks/useProfileResults';
 import { ExamResult } from '../types';
+import ResultPortal from './ResultPortal';
 
 interface ProgressDashboardProps {
   showToast: (type: string, message: string) => void;
-  onViewResult: (result: ExamResult) => void;
+  onViewResult?: (result: ExamResult) => void;
 }
 
 export default function ProgressDashboard({ showToast, onViewResult }: ProgressDashboardProps) {
   const { activeProfileId, activeProfile } = useActiveProfile();
+  const [selectedResult, setSelectedResult] = useState<ExamResult | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<ExamResult | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
@@ -63,13 +65,28 @@ export default function ProgressDashboard({ showToast, onViewResult }: ProgressD
     setConfirmText('');
   };
 
+  // If a result is selected, show ResultPortal inline within the history tab
+  if (selectedResult) {
+    return (
+      <ResultPortal
+        resultRecord={selectedResult}
+        backLabel="Back to History"
+        onRetake={() => {
+          // Pass the selected record upward so App can launch the exam
+          if (onViewResult) onViewResult(selectedResult);
+        }}
+        onGoHome={() => setSelectedResult(null)}
+      />
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col max-w-md mx-auto w-full pb-28 pt-2 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-headline font-semibold text-xl text-on-surface tracking-tight">
-            Quiz History & Archives
+            Quiz History &amp; Archives
           </h1>
         </div>
       </div>
@@ -131,7 +148,7 @@ export default function ProgressDashboard({ showToast, onViewResult }: ProgressD
 
                   <div className="flex items-center gap-2 pt-2 border-t border-surface-container">
                     <button
-                      onClick={() => onViewResult(rec)}
+                      onClick={() => setSelectedResult(rec)}
                       className="flex-1 h-9 rounded-xl bg-surface-container-low border border-surface-container-high text-primary font-headline text-xs font-semibold flex items-center justify-center gap-1 hover:bg-surface-container transition-all cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-[16px]">analytics</span>

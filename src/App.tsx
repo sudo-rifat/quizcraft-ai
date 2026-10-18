@@ -18,6 +18,7 @@ import Settings from './components/Settings';
 import ExamConfigModal from './components/ExamConfigModal';
 
 import { Quiz, ExamResult } from './types';
+import { normalizeQuiz } from './utils/quizJson';
 
 interface Toast {
   id: number;
@@ -87,13 +88,13 @@ function AppContent() {
   };
 
   const handleStartExam = ({ quiz, config }: { quiz: Quiz; config: any }) => {
-    setActiveQuiz(quiz);
+    setActiveQuiz(normalizeQuiz(quiz));
     setExamConfig(config);
     setCurrentTab('exam');
   };
 
   const handleRequestStartExam = (quiz: Quiz) => {
-    setPendingConfigQuiz(quiz);
+    setPendingConfigQuiz(normalizeQuiz(quiz));
   };
 
   const handleSubmitExam = async ({ userAnswers, timeSpentSecs }: { userAnswers: Record<string, number>; timeSpentSecs: number }) => {
@@ -106,10 +107,15 @@ function AppContent() {
     activeQuiz.questions.forEach((q, idx) => {
       const qId = q.id || (idx + 1);
       const choice = userAnswers[qId];
+      const correctAns = typeof q.correct_answer === 'number'
+        ? q.correct_answer
+        : typeof (q as any).correct_answer_index === 'number'
+        ? (q as any).correct_answer_index
+        : -1;
 
       if (choice === undefined) {
         unattemptedCount++;
-      } else if (choice === q.correct_answer) {
+      } else if (choice === correctAns) {
         correctCount++;
       } else {
         incorrectCount++;
@@ -208,7 +214,7 @@ function AppContent() {
         </div>
 
         <div className="w-full">
-          {currentTab === 'home' && (
+          <div className={currentTab === 'home' ? 'block' : 'hidden'}>
             <HomeDashboard
               onSwitchTab={setCurrentTab}
               onViewResult={(rec) => {
@@ -218,16 +224,16 @@ function AppContent() {
               onStartExam={handleStartExam}
               onRequestStartExam={handleRequestStartExam}
             />
-          )}
+          </div>
 
-          {currentTab === 'library' && (
+          <div className={currentTab === 'library' ? 'block' : 'hidden'}>
             <MyLibrary
               onSwitchTab={setCurrentTab}
               onStartExam={handleStartExam}
               onRequestStartExam={handleRequestStartExam}
               showToast={showToast}
             />
-          )}
+          </div>
 
           <div className={currentTab === 'create' ? 'block' : 'hidden'}>
             <QuizWizard
@@ -251,7 +257,7 @@ function AppContent() {
             <ResultPortal
               resultRecord={activeResultRecord}
               onRetake={() => {
-                setActiveQuiz(activeResultRecord.quiz_data as any);
+                setActiveQuiz(normalizeQuiz(activeResultRecord.quiz_data as any));
                 setExamConfig(activeResultRecord.exam_config);
                 setCurrentTab('exam');
               }}
@@ -259,16 +265,21 @@ function AppContent() {
             />
           )}
 
-          {currentTab === 'history' && (
-            <ProgressDashboard showToast={showToast} onViewResult={(rec) => {
-              setActiveResultRecord(rec);
-              setCurrentTab('result');
-            }} />
-          )}
+          <div className={currentTab === 'history' ? 'block' : 'hidden'}>
+            <ProgressDashboard
+              showToast={showToast}
+              onViewResult={(rec) => {
+                // Called when user hits "Retake" inside the embedded ResultPortal
+                setActiveQuiz(normalizeQuiz(rec.quiz_data as any));
+                setExamConfig(rec.exam_config);
+                setCurrentTab('exam');
+              }}
+            />
+          </div>
 
-          {currentTab === 'settings' && (
+          <div className={currentTab === 'settings' ? 'block' : 'hidden'}>
             <Settings showToast={showToast} />
-          )}
+          </div>
         </div>
       </main>
 

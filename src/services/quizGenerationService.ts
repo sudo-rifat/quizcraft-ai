@@ -1,5 +1,5 @@
 import { Settings, Quiz } from '../types';
-import { normalizeQuizJson } from '../utils/quizJson';
+import { normalizeQuizJson, normalizeQuiz } from '../utils/quizJson';
 
 export interface QuizGenerationResult {
   success: boolean;
@@ -23,6 +23,7 @@ export async function generateQuizViaApi(
   const openaiKey = settings.openaiApiKey?.trim();
   const openrouterKey = settings.openrouterApiKey?.trim();
   const groqKey = settings.groqApiKey?.trim();
+  const huggingfaceKey = settings.huggingfaceApiKey?.trim();
 
   // Validate API key exists
   if (provider === 'gemini' && !geminiKey) {
@@ -37,6 +38,9 @@ export async function generateQuizViaApi(
   if (provider === 'groq' && !groqKey) {
     return { success: false, error: 'Groq API Key not configured.', isRateLimit: false };
   }
+  if (provider === 'huggingface' && !huggingfaceKey) {
+    return { success: false, error: 'Hugging Face API Key not configured.', isRateLimit: false };
+  }
 
   try {
     let rawText: string;
@@ -46,9 +50,14 @@ export async function generateQuizViaApi(
     } else if (provider === 'openai') {
       rawText = await callOpenAI(prompt, openaiKey!, imageBase64, imageMimeType);
     } else if (provider === 'openrouter') {
-      rawText = await callOpenAI(prompt, openrouterKey!, imageBase64, imageMimeType, 'https://openrouter.ai/api/v1/chat/completions', 'openrouter/free');
+      const openrouterModel = settings.openrouterModel || 'openrouter/free';
+      rawText = await callOpenAI(prompt, openrouterKey!, imageBase64, imageMimeType, 'https://openrouter.ai/api/v1/chat/completions', openrouterModel);
+    } else if (provider === 'huggingface') {
+      const huggingfaceModel = settings.huggingfaceModel || 'Qwen/Qwen2.5-72B-Instruct';
+      rawText = await callOpenAI(prompt, huggingfaceKey!, imageBase64, imageMimeType, 'https://router.huggingface.co/v1/chat/completions', huggingfaceModel);
     } else {
-      rawText = await callOpenAI(prompt, groqKey!, imageBase64, imageMimeType, 'https://api.groq.com/openai/v1/chat/completions', 'llama-3.3-70b-versatile');
+      const groqModel = settings.groqModel || 'llama-3.3-70b-versatile';
+      rawText = await callOpenAI(prompt, groqKey!, imageBase64, imageMimeType, 'https://api.groq.com/openai/v1/chat/completions', groqModel);
     }
 
     // Parse and validate JSON from response
@@ -83,6 +92,7 @@ export function hasApiKeyConfigured(settings: Settings): boolean {
   if (provider === 'openai') return !!settings.openaiApiKey?.trim();
   if (provider === 'openrouter') return !!settings.openrouterApiKey?.trim();
   if (provider === 'groq') return !!settings.groqApiKey?.trim();
+  if (provider === 'huggingface') return !!settings.huggingfaceApiKey?.trim();
   return false;
 }
 
@@ -213,10 +223,20 @@ async function callOpenAI(
   });
 
   if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
     const status = response.status;
-    const msg = errData.error?.message || response.statusText || 'OpenAI API Error';
-    const error = new Error(`OpenAI API Error (${status}): ${msg}`);
+    let msg = response.statusText || 'API Error';
+    try {
+      const text = await response.text();
+      try {
+        const errData = JSON.parse(text);
+        msg = errData.error?.message || errData.message || errData.error || (typeof errData === 'string' ? errData : text);
+      } catch {
+        msg = text || msg;
+      }
+    } catch {
+      // fallback
+    }
+    const error = new Error(`API Error (${status}): ${msg}`);
     (error as any).status = status;
     throw error;
   }
@@ -245,58 +265,13 @@ function parseQuizJson(rawText: string): Quiz | null {
     }
 
     const parsed = JSON.parse(jsonStr);
+    const quiz = normalizeQuiz(parsed);
 
-    let title = 'Generated Quiz';
-    let rawQuestions: any[] = [];
-
-    if (Array.isArray(parsed)) {
-      rawQuestions = parsed;
-    } else if (parsed && typeof parsed === 'object') {
-      title = parsed.quiz_title || parsed.title || parsed.quizTitle || title;
-      rawQuestions = parsed.questions || parsed.mcqs || parsed.items || [];
-    }
-
-    if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+    if (!quiz.questions || quiz.questions.length === 0) {
       return null;
     }
 
-    const questions = rawQuestions.map((q: any, idx: number) => {
-      const question_text = q.question_text || q.question || q.text || `Question ${idx + 1}`;
-      let options = q.options || q.choices || [];
-      if (!Array.isArray(options)) options = [];
-
-      let correct_answer_index =
-        typeof q.correct_answer_index === 'number'
-          ? q.correct_answer_index
-          : typeof q.correct_answer === 'number'
-          ? q.correct_answer
-          : typeof q.answer_index === 'number'
-          ? q.answer_index
-          : 0;
-
-      if (typeof q.correct_answer === 'string') {
-        const letterIdx = ['a', 'b', 'c', 'd'].indexOf(q.correct_answer.trim().toLowerCase());
-        if (letterIdx !== -1) correct_answer_index = letterIdx;
-      }
-
-      const explanation = q.explanation || q.reason || '';
-
-      return {
-        id: `q_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
-        question_text,
-        options,
-        correct_answer_index,
-        explanation,
-      };
-    });
-
-    return {
-      id: `quiz_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      quiz_title: title,
-      created_at: new Date().toISOString(),
-      total_questions: questions.length,
-      questions,
-    };
+    return quiz;
   } catch (e) {
     console.error('Quiz JSON Parse Error:', e, rawText);
     return null;
