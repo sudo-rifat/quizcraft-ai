@@ -1,24 +1,27 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Quiz } from '../types';
+import { ActiveExamSession, Quiz } from '../types';
 import { db } from '../db/db';
 import { useActiveProfile } from '../context/ProfileContext';
 import MathText from './MathText';
+import { getQuestionStimulus } from '../utils/quizJson';
 
 interface ExamPortalProps {
   quizData: Quiz;
   examConfig: any;
+  resumeSession?: ActiveExamSession | null;
   onSubmitExam: (data: { userAnswers: Record<string, number>; timeSpentSecs: number }) => void;
   showToast: (type: string, message: string) => void;
 }
 
-export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToast }: ExamPortalProps) {
+export default function ExamPortal({ quizData, examConfig, resumeSession, onSubmitExam, showToast }: ExamPortalProps) {
   const { activeProfileId } = useActiveProfile();
   const [answers, setAnswers] = useState<Record<string, number>>(() => {
-    const saved = sessionStorage.getItem(`quiz_answers_${quizData.quiz_title}`);
-    return saved ? JSON.parse(saved) : {};
+    return resumeSession?.answers || {};
   });
   const [flagged, setFlagged] = useState<Record<string, boolean>>({});
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(() =>
+    Math.max(0, Math.min(resumeSession?.currentQuestionIndex || 0, quizData.questions.length - 1))
+  );
 
   // Load initial bookmarks from database
   useEffect(() => {
@@ -48,11 +51,13 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
   const initialTimerSeconds = isUnlimitedTimer ? 0 : examConfig.durationMinutes * 60;
   const [timerSeconds, setTimerSeconds] = useState(() => {
     if (isUnlimitedTimer) return 0;
-    const saved = sessionStorage.getItem(`quiz_timer_${quizData.quiz_title}`);
-    return saved ? parseInt(saved, 10) : initialTimerSeconds;
+    return resumeSession?.timerSeconds ?? initialTimerSeconds;
   });
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const handleSubmitRef = useRef<() => void>(() => {});
+  const isSubmittedRef = useRef(false);
+  const persistenceErrorShownRef = useRef(false);
   const touchStartXRef = useRef<number | null>(null);
   const touchEndXRef = useRef<number | null>(null);
 
@@ -105,11 +110,10 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
     timerRef.current = setInterval(() => {
       setTimerSeconds((prev) => {
         const next = prev - 1;
-        sessionStorage.setItem(`quiz_timer_${quizData.quiz_title}`, next.toString());
         if (next <= 0) {
           if (timerRef.current) clearInterval(timerRef.current);
           showToast('warning', 'Time is up! Submitting exam automatically...');
-          handleSubmit();
+          handleSubmitRef.current();
           return 0;
         }
         return next;
@@ -121,10 +125,27 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
     };
   }, [isUnlimitedTimer]);
 
-  // Auto-save answers
+  // Persist the complete in-progress exam so it survives app reloads.
   useEffect(() => {
-    sessionStorage.setItem(`quiz_answers_${quizData.quiz_title}`, JSON.stringify(answers));
-  }, [answers, quizData.quiz_title]);
+    if (!activeProfileId || isSubmittedRef.current) return;
+    db.activeExams.put({
+      profileId: activeProfileId,
+      quiz: quizData,
+      examConfig,
+      answers,
+      currentQuestionIndex,
+      timerSeconds,
+      updatedAt: Date.now(),
+    }).then(() => {
+      persistenceErrorShownRef.current = false;
+    }).catch((error) => {
+      console.error('Failed to persist active exam progress:', error);
+      if (!persistenceErrorShownRef.current) {
+        persistenceErrorShownRef.current = true;
+        showToast('error', 'পরীক্ষার অগ্রগতি সংরক্ষণে সমস্যা হয়েছে।');
+      }
+    });
+  }, [activeProfileId, answers, currentQuestionIndex, examConfig, quizData, showToast, timerSeconds]);
 
   const totalQuestions = quizData.questions.length;
 
@@ -200,17 +221,20 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
   const progressPercent = Math.round((answeredCount / totalQuestions) * 100);
 
   const handleSubmit = () => {
+    isSubmittedRef.current = true;
     setShowConfirmModal(false);
     if (timerRef.current) clearInterval(timerRef.current);
-    
-    sessionStorage.removeItem(`quiz_answers_${quizData.quiz_title}`);
-    sessionStorage.removeItem(`quiz_timer_${quizData.quiz_title}`);
 
     const timeSpentSecs = isUnlimitedTimer ? 0 : (initialTimerSeconds - timerSeconds);
     onSubmitExam({ userAnswers: answers, timeSpentSecs });
   };
 
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+  });
+
   const currentQ = quizData.questions[currentQuestionIndex];
+  const currentStimulus = getQuestionStimulus(quizData, currentQ);
   const qId = currentQ.id || (currentQuestionIndex + 1);
   const selectedOpt = answers[qId];
   const isFlagged = !!flagged[qId];
@@ -241,6 +265,7 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
             profileId: activeProfileId,
             quiz_title: quizData.quiz_title,
             question_text: questionText,
+            stimulus: currentStimulus,
             options: currentQ.options,
             correct_answer: correctAnswer,
             explanation: currentQ.explanation || '',
@@ -315,6 +340,14 @@ export default function ExamPortal({ quizData, examConfig, onSubmitExam, showToa
       >
         {/* Main Question Card (Removed "Single Choice" text) */}
         <section className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/30 shadow-[0_2px_12px_rgba(11,28,48,0.04)] mb-4 mt-2">
+          {currentStimulus && (
+            <div className="mb-4 rounded-xl border border-primary/15 bg-primary/5 p-3.5">
+              <p className="mb-1 text-[11px] font-headline font-bold text-primary">উদ্দীপক</p>
+              <div className="text-sm leading-relaxed text-on-surface-variant">
+                <MathText text={currentStimulus} />
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-3">
             <span className="font-headline font-bold text-xs uppercase tracking-wider text-primary bg-primary/10 px-2.5 py-1 rounded-md">
               Question {String(currentQuestionIndex + 1).padStart(2, '0')} / {totalQuestions}

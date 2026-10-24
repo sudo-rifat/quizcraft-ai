@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useActiveProfile } from '../context/ProfileContext';
-import { SavedQuiz, Quiz, BookmarkedQuestion } from '../types';
+import { SavedQuiz, Quiz, BookmarkedQuestion, DoubtResponse } from '../types';
 import { db } from '../db/db';
+import { getQuestionStimulus } from '../utils/quizJson';
+import FormattedAiResponse from './FormattedAiResponse';
 
 interface MyLibraryProps {
   onSwitchTab: (tabId: string) => void;
@@ -13,11 +15,13 @@ interface MyLibraryProps {
 
 export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam, showToast }: MyLibraryProps) {
   const { activeProfileId } = useActiveProfile();
-  const [activeSubTab, setActiveSubTab] = useState<'quizzes' | 'reviewLater'>('quizzes');
+  const [activeSubTab, setActiveSubTab] = useState<'quizzes' | 'reviewLater' | 'doubts'>('quizzes');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewQuiz, setPreviewQuiz] = useState<SavedQuiz | null>(null);
   const [quizToDelete, setQuizToDelete] = useState<SavedQuiz | null>(null);
   const [bookmarkToDelete, setBookmarkToDelete] = useState<BookmarkedQuestion | null>(null);
+  const [doubtToDelete, setDoubtToDelete] = useState<DoubtResponse | null>(null);
+  const [expandedDoubtId, setExpandedDoubtId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Live query for saved quizzes belonging to active profile
@@ -40,8 +44,43 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
     return list.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
   }, [activeProfileId]) as BookmarkedQuestion[] | undefined;
 
+  const savedDoubts = useLiveQuery(async () => {
+    if (!activeProfileId) return [];
+    const list = await db.doubtResponses
+      .where('profileId')
+      .equals(activeProfileId)
+      .toArray();
+    return list.sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [activeProfileId]) as DoubtResponse[] | undefined;
+
   const filteredQuizzes = (savedQuizzes || []).filter((q) =>
     q.quiz_title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const filteredDoubts = (savedDoubts || []).filter((doubt) =>
+    doubt.quizTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    doubt.questionText.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    doubt.doubtText.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    doubt.response.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const groupedDoubts = Array.from(
+    filteredDoubts.reduce((groups, doubt) => {
+      const key = JSON.stringify([doubt.quizKey, doubt.questionKey]);
+      const group = groups.get(key) || {
+        key,
+        quizTitle: doubt.quizTitle,
+        questionText: doubt.questionText,
+        doubts: [],
+      };
+      group.doubts.push(doubt);
+      groups.set(key, group);
+      return groups;
+    }, new Map<string, {
+      key: string;
+      quizTitle: string;
+      questionText: string;
+      doubts: DoubtResponse[];
+    }>())
+      .values()
   );
 
   const filteredBookmarks = (bookmarkedQuestions || []).filter((bm) =>
@@ -62,11 +101,27 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
     }
   };
 
+  const handleDeleteDoubt = async (id: number) => {
+    setDeletingId(id);
+    try {
+      await db.doubtResponses.delete(id);
+      setDoubtToDelete(null);
+      if (expandedDoubtId === id) setExpandedDoubtId(null);
+      showToast?.('success', 'Saved doubt response deleted.');
+    } catch (err) {
+      console.error('Failed to delete saved doubt response:', err);
+      showToast?.('error', 'Failed to delete saved doubt response.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && deletingId === null) {
         setQuizToDelete(null);
         setBookmarkToDelete(null);
+        setDoubtToDelete(null);
       }
     };
 
@@ -106,6 +161,7 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
       questions: bookmarkedQuestions.map((bm, i) => ({
         id: bm.id || i + 1,
         question: bm.question_text,
+        stimulus: bm.stimulus,
         options: bm.options,
         correct_answer: bm.correct_answer,
         explanation: bm.explanation || '',
@@ -151,21 +207,21 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
 
 
       {/* Subtab Navigation Pills */}
-      <section className="flex items-center gap-2 p-1 rounded-2xl bg-surface-container-low border border-surface-container-high/60">
+      <section className="flex items-center gap-1 p-1 rounded-2xl bg-surface-container-low border border-surface-container-high/60">
         <button
           onClick={() => setActiveSubTab('quizzes')}
-          className={`flex-1 py-2 rounded-xl font-headline font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+          className={`flex-1 py-2 rounded-xl font-headline font-semibold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeSubTab === 'quizzes'
               ? 'bg-surface-container-lowest text-on-surface shadow-xs'
               : 'text-on-surface-variant hover:text-on-surface'
           }`}
         >
           <span className="material-symbols-outlined text-[16px]">folder_open</span>
-          <span>Saved Quizzes ({savedQuizzes?.length || 0})</span>
+          <span>Quizzes ({savedQuizzes?.length || 0})</span>
         </button>
         <button
           onClick={() => setActiveSubTab('reviewLater')}
-          className={`flex-1 py-2 rounded-xl font-headline font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+          className={`flex-1 py-2 rounded-xl font-headline font-semibold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeSubTab === 'reviewLater'
               ? 'bg-surface-container-lowest text-amber-600 dark:text-amber-400 shadow-xs'
               : 'text-on-surface-variant hover:text-on-surface'
@@ -173,6 +229,17 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
         >
           <span className="material-symbols-outlined text-[16px]">bookmark</span>
           <span>Review Later ({bookmarkedQuestions?.length || 0})</span>
+        </button>
+        <button
+          onClick={() => setActiveSubTab('doubts')}
+          className={`flex-1 py-2 rounded-xl font-headline font-semibold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            activeSubTab === 'doubts'
+              ? 'bg-surface-container-lowest text-primary shadow-xs'
+              : 'text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[16px]">forum</span>
+          <span>Doubts ({savedDoubts?.length || 0})</span>
         </button>
       </section>
 
@@ -183,7 +250,13 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
         </span>
         <input
           type="text"
-          placeholder={activeSubTab === 'quizzes' ? "Search saved quizzes by title..." : "Search review later MCQs..."}
+          placeholder={
+            activeSubTab === 'quizzes'
+              ? 'Search saved quizzes by title...'
+              : activeSubTab === 'reviewLater'
+              ? 'Search review later MCQs...'
+              : 'Search saved doubts...'
+          }
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full h-11 pl-10 pr-4 rounded-xl bg-surface-container-lowest border border-surface-container-high font-body text-xs text-on-surface placeholder:text-outline/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
@@ -299,6 +372,110 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
                   </div>
                 );
               })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* TAB 3: SAVED DOUBT RESPONSES */}
+      {activeSubTab === 'doubts' && (
+        <section className="space-y-3">
+          {savedDoubts === undefined ? (
+            <div className="flex justify-center py-12">
+              <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : groupedDoubts.length === 0 ? (
+            <div className="rounded-2xl border-2 border-dashed border-surface-container-high p-8 flex flex-col items-center text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                <span className="material-symbols-outlined text-3xl">forum</span>
+              </div>
+              <div>
+                <h3 className="font-headline font-semibold text-sm text-on-surface">
+                  {searchQuery ? 'No matching doubts found' : 'No saved doubts yet'}
+                </h3>
+                <p className="text-xs font-body text-outline mt-1 max-w-xs">
+                  {searchQuery
+                    ? 'Try searching with another question, doubt, or quiz title.'
+                    : 'AI explanations you ask for in a quiz history will be saved here automatically.'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {groupedDoubts.map((group) => (
+                  <article
+                    key={group.key}
+                    className="rounded-2xl bg-surface-container-lowest border border-surface-container/80 p-4 space-y-3 shadow-[0_1px_3px_rgba(0,0,0,0.03)]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-[11px] font-headline font-semibold text-primary truncate">
+                          {group.quizTitle}
+                        </p>
+                        <h3 className="font-headline font-semibold text-sm text-on-surface leading-snug">
+                          {group.questionText}
+                        </h3>
+                        <p className="text-[10px] text-outline">
+                          {group.doubts.length} {group.doubts.length === 1 ? 'doubt' : 'doubts'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 border-t border-surface-container/70 pt-3">
+                      {group.doubts.map((doubt) => {
+                        const isExpanded = expandedDoubtId === doubt.id;
+                        const historyCount = doubt.historyIds?.length || 0;
+                        const formattedDate = new Date(doubt.updatedAt).toLocaleString();
+
+                        return (
+                          <div key={doubt.id} className="space-y-2 rounded-xl bg-surface-container-low/60 p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-xs leading-relaxed text-on-surface-variant">
+                                  <strong className="text-on-surface">আপনার প্রশ্ন: </strong>
+                                  {doubt.doubtText || 'সঠিক উত্তরটি বুঝিয়ে বলুন'}
+                                </p>
+                                <p className="mt-1 text-[10px] text-outline">
+                                  Saved {formattedDate}
+                                  {historyCount > 1 && ` · Used in ${historyCount} histories`}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setDoubtToDelete(doubt)}
+                                disabled={deletingId === doubt.id}
+                                title="Delete saved doubt"
+                                aria-label="Delete saved doubt"
+                                className="w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-outline/70 hover:text-error hover:bg-error/10 transition-all cursor-pointer disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-[17px]">
+                                  {deletingId === doubt.id ? 'hourglass_empty' : 'delete_outline'}
+                                </span>
+                              </button>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-on-surface-variant">
+                                <FormattedAiResponse text={doubt.response} />
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => setExpandedDoubtId(isExpanded ? null : (doubt.id ?? null))}
+                              className="flex w-full items-center justify-center gap-1 rounded-lg bg-surface-container-low py-2 text-xs font-headline font-semibold text-primary hover:bg-primary/10 transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">
+                                {isExpanded ? 'expand_less' : 'visibility'}
+                              </span>
+                              {isExpanded ? 'উত্তর লুকান' : 'উত্তর দেখুন'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </article>
+              ))}
             </div>
           )}
         </section>
@@ -509,6 +686,56 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
         </div>
       )}
 
+      {/* Saved Doubt Delete Confirmation */}
+      {doubtToDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && deletingId === null) setDoubtToDelete(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-doubt-title"
+            aria-describedby="delete-doubt-description"
+            className="w-full max-w-xs rounded-2xl bg-surface-container-lowest border border-error/30 p-5 space-y-4 shadow-2xl"
+          >
+            <div className="text-center space-y-2">
+              <div className="w-10 h-10 rounded-full bg-error/20 text-error flex items-center justify-center mx-auto">
+                <span className="material-symbols-outlined text-xl">delete_forever</span>
+              </div>
+              <h3 id="delete-doubt-title" className="font-headline font-semibold text-base text-on-surface">
+                Delete Saved Doubt?
+              </h3>
+              <p id="delete-doubt-description" className="text-xs font-body text-outline leading-relaxed">
+                This saved AI response will be permanently deleted for this profile. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDoubtToDelete(null)}
+                disabled={deletingId !== null}
+                className="flex-1 h-10 rounded-xl bg-surface-container-low text-on-surface font-headline text-xs font-semibold hover:bg-surface-container transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => doubtToDelete.id !== undefined && handleDeleteDoubt(doubtToDelete.id)}
+                disabled={doubtToDelete.id === undefined || deletingId !== null}
+                className="flex-1 h-10 rounded-xl bg-error text-on-error font-headline text-xs font-semibold shadow-xs hover:bg-error/90 transition-all cursor-pointer disabled:cursor-wait disabled:opacity-70"
+              >
+                {deletingId !== null ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {/* Preview Quiz Modal */}
       {previewQuiz && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -538,6 +765,14 @@ export default function MyLibrary({ onSwitchTab, onStartExam, onRequestStartExam
                   key={idx}
                   className="rounded-2xl bg-surface-container-low/60 border border-surface-container/60 p-4 space-y-2.5"
                 >
+                  {getQuestionStimulus(previewQuiz.quiz_data, q) && (
+                    <div className="rounded-xl border border-primary/15 bg-primary/5 p-3">
+                      <p className="mb-1 text-[10px] font-headline font-bold text-primary">উদ্দীপক</p>
+                      <p className="text-xs leading-relaxed text-on-surface-variant">
+                        {getQuestionStimulus(previewQuiz.quiz_data, q)}
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-start gap-2">
                     <span className="w-5 h-5 rounded-md bg-primary/10 text-primary font-headline font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
                       {idx + 1}

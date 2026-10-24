@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, defaultSettings } from './db/db';
 
@@ -9,15 +9,15 @@ import ProfileManagementModal from './components/ProfileManagementModal';
 
 import Navigation from './components/Navigation';
 import HomeDashboard from './components/HomeDashboard';
-import MyLibrary from './components/MyLibrary';
-import QuizWizard from './components/QuizWizard';
-import ExamPortal from './components/ExamPortal';
-import ResultPortal from './components/ResultPortal';
-import ProgressDashboard from './components/ProgressDashboard';
-import Settings from './components/Settings';
+const MyLibrary = lazy(() => import('./components/MyLibrary'));
+const QuizWizard = lazy(() => import('./components/QuizWizard'));
+const ExamPortal = lazy(() => import('./components/ExamPortal'));
+const ResultPortal = lazy(() => import('./components/ResultPortal'));
+const ProgressDashboard = lazy(() => import('./components/ProgressDashboard'));
+const Settings = lazy(() => import('./components/Settings'));
 import ExamConfigModal from './components/ExamConfigModal';
 
-import { Quiz, ExamResult } from './types';
+import { ActiveExamSession, Quiz, ExamResult } from './types';
 import { normalizeQuiz } from './utils/quizJson';
 
 interface Toast {
@@ -27,13 +27,18 @@ interface Toast {
 }
 
 function AppContent() {
-  const [currentTab, setCurrentTab] = useState('home');
+  const [currentTab, setCurrentTabState] = useState('home');
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set([currentTab]));
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
   const [examConfig, setExamConfig] = useState<any>(null);
+  const [resumeSession, setResumeSession] = useState<ActiveExamSession | null>(null);
   const [pendingConfigQuiz, setPendingConfigQuiz] = useState<Quiz | null>(null);
   const [activeResultRecord, setActiveResultRecord] = useState<ExamResult | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const setCurrentTab = (tab: string) => {
+    setVisitedTabs((previous) => previous.has(tab) ? previous : new Set(previous).add(tab));
+    setCurrentTabState(tab);
+  };
 
   // Active Exam Switch Profile Prompt State
   const [pendingSwitchAction, setPendingSwitchAction] = useState<(() => void) | null>(null);
@@ -47,19 +52,10 @@ function AppContent() {
     isManagementOpen,
     setIsManagementOpen
   } = useActiveProfile();
-
-  useEffect(() => {
-    const handleOnlineStatus = () => setIsOffline(false);
-    const handleOfflineStatus = () => setIsOffline(true);
-
-    window.addEventListener('online', handleOnlineStatus);
-    window.addEventListener('offline', handleOfflineStatus);
-
-    return () => {
-      window.removeEventListener('online', handleOnlineStatus);
-      window.removeEventListener('offline', handleOfflineStatus);
-    };
-  }, []);
+  const savedExamSession = useLiveQuery(
+    () => activeProfileId ? db.activeExams.get(activeProfileId) : undefined,
+    [activeProfileId]
+  );
 
   // Theme Management
   const prefs = useLiveQuery(() => db.settings.get('user_prefs'), []) || defaultSettings;
@@ -77,7 +73,7 @@ function AppContent() {
         root.classList.remove('dark');
       }
     }
-  }, [prefs?.theme]);
+  }, [prefs]);
 
   const showToast = (type: string, message: string) => {
     const id = Date.now() + Math.random();
@@ -87,8 +83,28 @@ function AppContent() {
     }, 4000);
   };
 
-  const handleStartExam = ({ quiz, config }: { quiz: Quiz; config: any }) => {
-    setActiveQuiz(normalizeQuiz(quiz));
+  const handleStartExam = async ({ quiz, config }: { quiz: Quiz; config: any }) => {
+    const normalizedQuiz = normalizeQuiz(quiz);
+    if (activeProfileId) {
+      try {
+        await db.activeExams.put({
+          profileId: activeProfileId,
+          quiz: normalizedQuiz,
+          examConfig: config,
+          answers: {},
+          currentQuestionIndex: 0,
+          timerSeconds: config.durationMinutes === 0 ? 0 : config.durationMinutes * 60,
+          updatedAt: Date.now(),
+        });
+      } catch (error) {
+        console.error('Failed to save active exam session:', error);
+        showToast('error', 'পরীক্ষার অগ্রগতি সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।');
+        return;
+      }
+    }
+
+    setResumeSession(null);
+    setActiveQuiz(normalizedQuiz);
     setExamConfig(config);
     setCurrentTab('exam');
   };
@@ -142,7 +158,7 @@ function AppContent() {
       profileId: activeProfileId, // CRITICAL: Explicit profile ID isolation
       timestamp: new Date().toISOString(),
       quiz_title: activeQuiz.quiz_title,
-      quiz_data: activeQuiz as any,
+      quiz_data: activeQuiz,
       exam_config: examConfig,
       user_answers: userAnswers,
       score,
@@ -155,10 +171,20 @@ function AppContent() {
       timeSpentFormatted
     };
 
-    // Save to IndexedDB
-    await db.examResults.put(record);
+    // Save the result and clear the resumable session together.
+    try {
+      await db.transaction('rw', db.examResults, db.activeExams, async () => {
+        await db.examResults.put(record);
+        await db.activeExams.delete(activeProfileId);
+      });
+    } catch (error) {
+      console.error('Failed to save exam result:', error);
+      showToast('error', 'পরীক্ষার ফলাফল সংরক্ষণ করা যায়নি। আবার জমা দেওয়ার চেষ্টা করুন।');
+      return;
+    }
 
     setActiveResultRecord(record);
+    setResumeSession(null);
     setCurrentTab('result');
   };
 
@@ -176,6 +202,7 @@ function AppContent() {
       setPendingSwitchAction(null);
       setActiveQuiz(null);
       setExamConfig(null);
+      setResumeSession(null);
       setCurrentTab('home');
     }
   };
@@ -226,60 +253,80 @@ function AppContent() {
             />
           </div>
 
-          <div className={currentTab === 'library' ? 'block' : 'hidden'}>
-            <MyLibrary
-              onSwitchTab={setCurrentTab}
-              onStartExam={handleStartExam}
-              onRequestStartExam={handleRequestStartExam}
-              showToast={showToast}
-            />
-          </div>
+          {visitedTabs.has('library') && (
+            <div className={currentTab === 'library' ? 'block' : 'hidden'}>
+              <Suspense fallback={<div className="p-8 text-center text-sm text-outline">Loading library...</div>}>
+                <MyLibrary
+                  onSwitchTab={setCurrentTab}
+                  onStartExam={handleStartExam}
+                  onRequestStartExam={handleRequestStartExam}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </div>
+          )}
 
-          <div className={currentTab === 'create' ? 'block' : 'hidden'}>
-            <QuizWizard
-              onStartExam={handleStartExam}
-              onRequestStartExam={handleRequestStartExam}
-              onSwitchTab={setCurrentTab}
-              showToast={showToast}
-            />
-          </div>
+          {visitedTabs.has('create') && (
+            <div className={currentTab === 'create' ? 'block' : 'hidden'}>
+              <Suspense fallback={<div className="p-8 text-center text-sm text-outline">Loading quiz creator...</div>}>
+                <QuizWizard
+                  onStartExam={handleStartExam}
+                  onRequestStartExam={handleRequestStartExam}
+                  onSwitchTab={setCurrentTab}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </div>
+          )}
 
           {currentTab === 'exam' && activeQuiz && (
-            <ExamPortal
-              quizData={activeQuiz}
-              examConfig={examConfig}
-              onSubmitExam={handleSubmitExam}
-              showToast={showToast}
-            />
+            <Suspense fallback={<div className="p-8 text-center text-sm text-outline">Loading exam...</div>}>
+              <ExamPortal
+                quizData={activeQuiz}
+                examConfig={examConfig}
+                resumeSession={resumeSession}
+                onSubmitExam={handleSubmitExam}
+                showToast={showToast}
+              />
+            </Suspense>
           )}
 
           {currentTab === 'result' && activeResultRecord && (
-            <ResultPortal
-              resultRecord={activeResultRecord}
-              onRetake={() => {
-                setActiveQuiz(normalizeQuiz(activeResultRecord.quiz_data as any));
-                setExamConfig(activeResultRecord.exam_config);
-                setCurrentTab('exam');
-              }}
-              onGoHome={() => setCurrentTab('home')}
-            />
+            <Suspense fallback={<div className="p-8 text-center text-sm text-outline">Loading results...</div>}>
+              <ResultPortal
+                resultRecord={activeResultRecord}
+                onRetake={() => {
+                  setActiveQuiz(normalizeQuiz(activeResultRecord.quiz_data as any));
+                  setExamConfig(activeResultRecord.exam_config);
+                  setCurrentTab('exam');
+                }}
+                onGoHome={() => setCurrentTab('home')}
+              />
+            </Suspense>
           )}
 
-          <div className={currentTab === 'history' ? 'block' : 'hidden'}>
-            <ProgressDashboard
-              showToast={showToast}
-              onViewResult={(rec) => {
-                // Called when user hits "Retake" inside the embedded ResultPortal
-                setActiveQuiz(normalizeQuiz(rec.quiz_data as any));
-                setExamConfig(rec.exam_config);
-                setCurrentTab('exam');
-              }}
-            />
-          </div>
+          {visitedTabs.has('history') && (
+            <div className={currentTab === 'history' ? 'block' : 'hidden'}>
+              <Suspense fallback={<div className="p-8 text-center text-sm text-outline">Loading history...</div>}>
+                <ProgressDashboard
+                  showToast={showToast}
+                  onViewResult={(rec) => {
+                    setActiveQuiz(normalizeQuiz(rec.quiz_data as any));
+                    setExamConfig(rec.exam_config);
+                    setCurrentTab('exam');
+                  }}
+                />
+              </Suspense>
+            </div>
+          )}
 
-          <div className={currentTab === 'settings' ? 'block' : 'hidden'}>
-            <Settings showToast={showToast} />
-          </div>
+          {visitedTabs.has('settings') && (
+            <div className={currentTab === 'settings' ? 'block' : 'hidden'}>
+              <Suspense fallback={<div className="p-8 text-center text-sm text-outline">Loading settings...</div>}>
+                <Settings showToast={showToast} />
+              </Suspense>
+            </div>
+          )}
         </div>
       </main>
 
@@ -310,6 +357,54 @@ function AppContent() {
             handleStartExam({ quiz: quizToStart, config });
           }}
         />
+      )}
+
+      {savedExamSession && currentTab !== 'exam' && !isProfileSelectorOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-surface-container-lowest border border-primary/20 p-6 shadow-2xl space-y-5">
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                <span className="material-symbols-outlined text-2xl">resume</span>
+              </div>
+              <h2 className="font-headline text-lg font-bold text-on-surface">অসমাপ্ত পরীক্ষা পাওয়া গেছে</h2>
+              <p className="text-sm font-semibold text-primary">{savedExamSession.quiz.quiz_title}</p>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                {Object.keys(savedExamSession.answers).length}টি প্রশ্নের উত্তর সংরক্ষিত আছে। আগের জায়গা থেকে চালিয়ে যাবেন?
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await db.activeExams.delete(savedExamSession.profileId);
+                  } catch (error) {
+                    console.error('Failed to discard active exam session:', error);
+                    showToast('error', 'অসমাপ্ত পরীক্ষাটি বাতিল করা যায়নি।');
+                  }
+                }}
+                className="flex-1 h-11 rounded-xl bg-surface-container-low text-on-surface font-headline text-xs font-semibold"
+              >
+                বাতিল করুন
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setResumeSession(savedExamSession);
+                  setActiveQuiz(normalizeQuiz(savedExamSession.quiz));
+                  setExamConfig(savedExamSession.examConfig);
+                  setCurrentTab('exam');
+                }}
+                className="flex-1 h-11 rounded-xl bg-primary text-on-primary font-headline text-xs font-semibold shadow-xs"
+              >
+                পরীক্ষা Resume
+              </button>
+            </div>
+            <p className="text-center text-[10px] text-outline">
+              শেষ সংরক্ষণ: {new Date(savedExamSession.updatedAt).toLocaleString()}
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Profile Management Modal */}

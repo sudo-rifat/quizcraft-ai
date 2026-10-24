@@ -20,10 +20,17 @@ export interface Question {
   id: number | string;
   question: string;
   question_text?: string;
+  stimulusId?: string;
+  stimulus?: string;
   options: string[];
   correct_answer: number;
   correct_answer_index?: number;
   explanation: string;
+}
+
+export interface StimulusGroup {
+  id: string;
+  text: string;
 }
 
 export interface Quiz {
@@ -31,6 +38,7 @@ export interface Quiz {
   quiz_title: string;
   created_at?: string;
   total_questions?: number;
+  stimulusGroups?: StimulusGroup[];
   questions: Question[];
 }
 
@@ -39,6 +47,7 @@ export interface BookmarkedQuestion {
   profileId: string;
   quiz_title: string;
   question_text: string;
+  stimulus?: string;
   options: string[];
   correct_answer: number;
   explanation?: string;
@@ -54,15 +63,41 @@ export interface SavedQuiz {
   questionCount: number;
 }
 
+export interface ActiveExamSession {
+  profileId: string;
+  quiz: Quiz;
+  examConfig: {
+    durationMinutes: number;
+    marksPerQuestion: number;
+    negativeMarking: number;
+  };
+  answers: Record<string, number>;
+  currentQuestionIndex: number;
+  timerSeconds: number;
+  updatedAt: number;
+}
+
+export interface DoubtResponse {
+  id?: number;
+  profileId: string;
+  quizKey: string;
+  questionKey: string;
+  doubtKey: string;
+  quizTitle: string;
+  questionText: string;
+  doubtText: string;
+  response: string;
+  historyIds: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ExamResult {
   id: string;
   profileId: string;
   quiz_title: string;
   timestamp: string;
-  quiz_data: {
-    quiz_title: string;
-    questions: Question[];
-  };
+  quiz_data: Quiz;
   exam_config: {
     durationMinutes: number;
     marksPerQuestion: number;

@@ -31,10 +31,13 @@ CRITICAL INSTRUCTIONS:
 5. "correct_answer" MUST be an integer between 0 and 3, representing the 0-indexed position in the "options" array.
 6. "options" MUST contain exactly 4 unique strings.
 7. "id" MUST be an integer starting from 1.
+8. When multiple questions use the same passage or উদ্দীপক, include it once in "stimulus_groups" and set its group id as "stimulus_id" on every related question. Otherwise use an empty array and omit "stimulus_id".
+9. Each stimulus group must contain an "id" and the passage text in "text".
 
 STRICT JSON STRUCTURE TO FOLLOW:
 {
   "quiz_title": "${sub} - ${ch} (${top})",
+  "stimulus_groups": [],
   "questions": [
     {
       "id": 1,

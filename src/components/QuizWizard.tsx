@@ -85,10 +85,13 @@ SMART DETECTION RULES:
 INSTRUCTIONS:
 1. Apply the Smart Detection Rules above based on what you see in the image.
 2. All questions and options should be in Bengali (or the same language as the image content).
-3. Respond ONLY with a raw, valid JSON object strictly matching this schema (no markdown fences, no explanatory text outside JSON):
+3. When multiple questions use the same passage or উদ্দীপক, add it once to "stimulus_groups" and set that group's id as "stimulus_id" on every related question. Questions without a shared stimulus should omit "stimulus_id".
+   Each group must contain an "id" and the passage text in "text".
+4. Respond ONLY with a raw, valid JSON object strictly matching this schema (no markdown fences, no explanatory text outside JSON):
 
 {
   "quiz_title": "Image MCQ Quiz",
+  "stimulus_groups": [],
   "questions": [
     {
       "id": 1,
@@ -113,6 +116,8 @@ SMART DETECTION RULES:
 - If the text already contains MCQs (questions with options): Extract them directly, identify the correct answer, and write a short Bengali explanation for each.
 - If the text is a passage, notes, or paragraph (no pre-made options): Generate exactly ${count} MCQs from the content with 4 options (A/B/C/D) each.
 - If the text contains BOTH MCQs and passage content: Extract existing MCQs first, then generate additional questions from the passage — targeting ${count} questions total.
+- When multiple questions use the same passage or উদ্দীপক, add it once to "stimulus_groups" and set that group's id as "stimulus_id" on every related question. Questions without a shared stimulus should omit "stimulus_id".
+- Each group must contain an "id" and the passage text in "text".
 
 RAW INPUT:
 ----------------------------------------
@@ -122,6 +127,7 @@ ${rawContent}
 IMPORTANT: Respond ONLY with a raw, valid JSON object strictly matching this schema (no markdown fences, no explanatory text):
 {
   "quiz_title": "${title}",
+  "stimulus_groups": [],
   "questions": [
     {
       "id": 1,
@@ -140,9 +146,13 @@ IMPORTANT: Respond ONLY with a raw, valid JSON object strictly matching this sch
 
         const text = `Act as an expert Academic Educator. Generate exactly ${count} Multiple Choice Questions (MCQs) in Bengali for Level: ${grade}, Subject: "${sub}", Chapter: "${ch}", Specific Topics: "${top}", Difficulty: ${difficulty}.
 
-IMPORTANT: You MUST respond ONLY with a raw, valid JSON object strictly matching this schema format (no markdown fences, no explanatory text):
+IMPORTANT:
+- If multiple questions are based on the same passage or উদ্দীপক, include that text once in "stimulus_groups" and set its id as "stimulus_id" on each related question. Otherwise use an empty "stimulus_groups" array and omit "stimulus_id".
+- Each stimulus group must contain an "id" and the passage text in "text".
+- You MUST respond ONLY with a raw, valid JSON object strictly matching this schema format (no markdown fences, no explanatory text):
 {
   "quiz_title": "${sub}: ${ch} - ${top}",
+  "stimulus_groups": [],
   "questions": [
     {
       "id": 1,

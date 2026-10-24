@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { Profile, SavedQuiz, ExamResult, Settings, Progress, BookmarkedQuestion } from '../types';
+import { Profile, SavedQuiz, ExamResult, Settings, Progress, BookmarkedQuestion, ActiveExamSession, DoubtResponse } from '../types';
 
 export class QuizCraftDatabase extends Dexie {
   profiles!: Table<Profile, string>;
@@ -8,6 +8,8 @@ export class QuizCraftDatabase extends Dexie {
   settings!: Table<Settings, string>;
   progress!: Table<Progress, number>;
   bookmarks!: Table<BookmarkedQuestion, number>;
+  activeExams!: Table<ActiveExamSession, string>;
+  doubtResponses!: Table<DoubtResponse, number>;
 
   constructor() {
     super('QuizCraftDB');
@@ -44,6 +46,38 @@ export class QuizCraftDatabase extends Dexie {
       settings: 'id',
       progress: '++id, profileId, topic, correct, attempted, accuracy',
       bookmarks: '++id, profileId, quiz_title, savedAt'
+    });
+
+    this.version(5).stores({
+      profiles: 'id, name, createdAt',
+      quizzes: '++id, profileId, quiz_title, savedAt',
+      examResults: 'id, profileId, quiz_title, timestamp, score, accuracy',
+      settings: 'id',
+      progress: '++id, profileId, topic, correct, attempted, accuracy',
+      bookmarks: '++id, profileId, quiz_title, savedAt',
+      activeExams: 'profileId, updatedAt'
+    });
+
+    this.version(6).stores({
+      profiles: 'id, name, createdAt',
+      quizzes: '++id, profileId, quiz_title, savedAt',
+      examResults: 'id, profileId, quiz_title, timestamp, score, accuracy',
+      settings: 'id',
+      progress: '++id, profileId, topic, correct, attempted, accuracy',
+      bookmarks: '++id, profileId, quiz_title, savedAt',
+      activeExams: 'profileId, updatedAt',
+      doubtResponses: '++id, profileId, quizKey, questionKey, doubtKey, &[profileId+quizKey+questionKey+doubtKey], updatedAt'
+    });
+
+    this.version(7).stores({
+      profiles: 'id, name, createdAt',
+      quizzes: '++id, profileId, quiz_title, savedAt',
+      examResults: 'id, profileId, quiz_title, timestamp, score, accuracy',
+      settings: 'id',
+      progress: '++id, profileId, topic, correct, attempted, accuracy',
+      bookmarks: '++id, profileId, quiz_title, savedAt',
+      activeExams: 'profileId, updatedAt',
+      doubtResponses: '++id, profileId, quizKey, questionKey, doubtKey, updatedAt'
     });
   }
 }

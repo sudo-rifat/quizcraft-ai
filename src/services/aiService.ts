@@ -6,6 +6,7 @@ interface AskAiParams {
   correctAnswerText: string;
   userAnswerText?: string;
   userQuery?: string;
+  responseMode?: 'explain' | 'simplify' | 'practice' | 'custom';
   settings: Settings;
 }
 
@@ -15,6 +16,7 @@ export async function askAiForExplanation({
   correctAnswerText,
   userAnswerText,
   userQuery,
+  responseMode = 'custom',
   settings,
 }: AskAiParams): Promise<string> {
   const provider = settings.preferredAiProvider || 'gemini';
@@ -41,6 +43,14 @@ export async function askAiForExplanation({
     throw new Error('Hugging Face API Key is missing. Please add your key in Settings.');
   }
 
+  const responseInstructions = responseMode === 'explain'
+    ? `Explain why the correct answer is right and why relevant alternatives are wrong. Keep it clear and focused on the original question.`
+    : responseMode === 'simplify'
+    ? `Explain the underlying concept for a beginner in very simple language. Break down any difficult terms or reasoning into easy steps. Use a familiar analogy if helpful.`
+    : responseMode === 'practice'
+    ? `Create exactly TWO new practice problems similar in concept and difficulty to the original. Do not solve the original question. Show both problems first without answers, then provide a separate Answer Key with the correct answer and a brief solution for each.`
+    : `Answer the student's specific query directly and clearly. Include only the explanation or details needed to resolve that query.`;
+
   const prompt = `
 You are an expert tutor helping a student understand a quiz question.
 
@@ -51,20 +61,12 @@ ${options.map((opt, i) => `${String.fromCharCode(65 + i)}. ${opt}`).join('\n')}
 Correct Answer: "${correctAnswerText}"
 ${userAnswerText ? `Student's Selected Answer: "${userAnswerText}"` : 'Student did not answer this question.'}
 
-Student's Query: ${userQuery || 'Please explain why the correct answer is right, analyze why other options are wrong, and explain the underlying concept clearly.'}
+Student's Query: ${userQuery || 'Please explain this question clearly.'}
 
-Respond in student-friendly Bengali (use English only where needed) using this compact format:
+Requested response:
+${responseInstructions}
 
-## Correct Answer
-State the correct option and answer in one line.
-## Why It Is Correct
-Give a short, clear explanation.
-## Why Other Options Are Wrong
-Use one short bullet for each relevant incorrect option.
-## Key Takeaway
-Give one memorable rule or formula.
-
-Do not add greetings, emojis, repeated encouragement, or extra closing remarks. Keep the full answer under 180 words unless the student specifically asks for more detail.
+Respond in student-friendly Bengali (use English only where needed). Use concise headings, bullets, and LaTeX for mathematical or scientific notation where appropriate. Do not add greetings, emojis, repeated encouragement, or extra closing remarks. Keep the full answer under 180 words unless the student specifically asks for more detail or requests practice problems.
 `.trim();
 
   if (provider === 'gemini') {
